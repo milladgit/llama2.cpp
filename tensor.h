@@ -80,3 +80,11 @@ private:
         }
     }
 };
+
+template <typename DataType>
+class MemoryMappedTensor : public Tensor<DataType> {
+public:
+    MemoryMappedTensor(const char* filename) {
+
+    }
+};
