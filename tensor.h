@@ -16,7 +16,7 @@ public:
         assert(newShape.size() >= 1);
         initializeShape(newShape);
         const ShapeT totalSize = std::accumulate(shape.begin(), shape.end(), (ShapeT)1, std::multiplies<ShapeT>());
-        data = calloc(totalSize, sizeof(DataType));
+        data = (DataType*)calloc(totalSize, sizeof(DataType));
         dataAllocatedByMe = true;
         isMemoryMapped = false;
     }
@@ -24,7 +24,7 @@ public:
         assert(newShape.size() >= 1);
         initializeShape(newShape);
         const ShapeT totalSize = std::accumulate(shape.begin(), shape.end(), (ShapeT)1, std::multiplies<ShapeT>());
-        data = calloc(totalSize, sizeof(DataType));
+        data = (DataType*)calloc(totalSize, sizeof(DataType));
         dataAllocatedByMe = true;
         isMemoryMapped = false;
     }
@@ -72,8 +72,8 @@ private:
     bool isMemoryMapped;
     int fdMemoryMapped;
 
-    void initializeShape(const std::vector<int>& newShape) {
-        strides = std::vector<int>(newShape.size());
+    void initializeShape(const std::vector<ShapeT>& newShape) {
+        strides = std::vector<ShapeT>(newShape.size());
         strides[newShape.size() - 1] = 1;
         for(int i=(int)newShape.size()-2;i>=0;i--) {
             strides[i] = newShape[i] * strides[i-1];
