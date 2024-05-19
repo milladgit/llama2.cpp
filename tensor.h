@@ -37,16 +37,6 @@ public:
         isMemoryMapped = false;
     }
 
-    Tensor(const char* filename, ssize_t file_size, ssize_t offset = 0) {
-        fdMemoryMapped = open(filename, O_RDONLY); // open in read only mode
-        if (fdMemoryMapped == -1) { fprintf(stderr, "open failed!\n"); exit(EXIT_FAILURE); }
-        data = (DataType*)mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fdMemoryMapped, 0);
-        if (data == MAP_FAILED) { fprintf(stderr, "mmap failed!\n"); exit(EXIT_FAILURE); }
-//        float* weights_ptr = *data + sizeof(Config)/sizeof(float);
-        data += offset;
-        isMemoryMapped = true;
-    }
-
     ~Tensor() {
         if(dataAllocatedByMe) {
             free(data);

@@ -9,7 +9,8 @@ run: run.c
 	$(CC) -O3 -o runq runq.c -lm
 
 runcpp: run.cpp
-	$(CC) -std=c++17 -O3 -o run run.cpp -lm -I.
+#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
+	g++ -std=c++17 -O3 -I. -o run run.cpp -lm
 
 # useful for a debug build, can then e.g. analyze with valgrind, example:
 # $ valgrind --leak-check=full ./run out/model.bin -n 3

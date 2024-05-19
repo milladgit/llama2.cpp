@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <time.h>
-#include <math.h>
+//#include <math.h>
 #include <string.h>
 #include <fcntl.h>
 #if defined _WIN32
@@ -13,6 +13,12 @@
     #include <unistd.h>
     #include <sys/mman.h>
 #endif
+
+#include "tensor.h"
+
+
+#if 0
+
 // ----------------------------------------------------------------------------
 // Transformer model
 
@@ -883,6 +889,8 @@ void chat(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
     free(prompt_tokens);
 }
 
+#endif  // #if 0: Disabling most part of the code for step-by-step changing!
+
 
 // ----------------------------------------------------------------------------
 // CLI, include only if not testing
@@ -903,7 +911,7 @@ void error_usage() {
     exit(EXIT_FAILURE);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
 
     // default parameters
     char *checkpoint_path = NULL;  // e.g. out/model.bin
@@ -943,31 +951,32 @@ int main(int argc, char *argv[]) {
 
     // build the Transformer via the model .bin file
     Transformer transformer;
-    build_transformer(&transformer, checkpoint_path);
-    if (steps == 0 || steps > transformer.config.seq_len) steps = transformer.config.seq_len; // override to ~max length
-
-    // build the Tokenizer via the tokenizer .bin file
-    Tokenizer tokenizer;
-    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
-
-    // build the Sampler
-    Sampler sampler;
-    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
-
-    // run!
-    if (strcmp(mode, "generate") == 0) {
-        generate(&transformer, &tokenizer, &sampler, prompt, steps);
-    } else if (strcmp(mode, "chat") == 0) {
-        chat(&transformer, &tokenizer, &sampler, prompt, system_prompt, steps);
-    } else {
-        fprintf(stderr, "unknown mode: %s\n", mode);
-        error_usage();
-    }
-
-    // memory and file handles cleanup
-    free_sampler(&sampler);
-    free_tokenizer(&tokenizer);
-    free_transformer(&transformer);
+//    build_transformer(&transformer, checkpoint_path);
+//    if (steps == 0 || steps > transformer.config.seq_len) steps = transformer.config.seq_len; // override to ~max length
+//
+//    // build the Tokenizer via the tokenizer .bin file
+//    Tokenizer tokenizer;
+//    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
+//
+//    // build the Sampler
+//    Sampler sampler;
+//    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
+//
+//    // run!
+//    if (strcmp(mode, "generate") == 0) {
+//        generate(&transformer, &tokenizer, &sampler, prompt, steps);
+//    } else if (strcmp(mode, "chat") == 0) {
+//        chat(&transformer, &tokenizer, &sampler, prompt, system_prompt, steps);
+//    } else {
+//        fprintf(stderr, "unknown mode: %s\n", mode);
+//        error_usage();
+//    }
+//
+//    // memory and file handles cleanup
+//    free_sampler(&sampler);
+//    free_tokenizer(&tokenizer);
+//    free_transformer(&transformer);
     return 0;
 }
-#endif
+
+#endif  // TESTING
