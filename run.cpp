@@ -15,7 +15,7 @@
 #endif
 
 #include "tensor.h"
-
+#include "tokenizer.h"
 
 // ----------------------------------------------------------------------------
 // Transformer model
@@ -1054,10 +1054,10 @@ int main(int argc, char **argv) {
     if (steps == 0 || steps > transformer.config.seq_len)
         steps = transformer.config.seq_len; // override to ~max length
 
-//    // build the Tokenizer via the tokenizer .bin file
-//    Tokenizer tokenizer;
-////    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
-//    tokenizer.build(tokenizer_path, transformer.config.vocab_size);
+    // build the Tokenizer via the tokenizer .bin file
+    Tokenizer tokenizer;
+//    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
+    tokenizer.build(tokenizer_path, transformer.config.vocab_size);
 
 //    // build the Sampler
 //    Sampler sampler;
