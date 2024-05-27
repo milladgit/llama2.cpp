@@ -10,27 +10,32 @@ class Tensor {
 public:
     using ShapeT = unsigned long long;
 
-    Tensor() {}
+    Tensor() : dataAllocatedByMe(false), data(nullptr), isMemoryMapped(false), fdMemoryMapped(false) {}
 
     Tensor(const std::initializer_list<ShapeT>& newShape) : shape(std::begin(newShape), std::end(newShape)) {
-        assert(newShape.size() >= 1);
+//        assert(newShape.size() >= 1);
+
         initializeShape(newShape);
         const ShapeT totalSize = std::accumulate(shape.begin(), shape.end(), (ShapeT)1, std::multiplies<ShapeT>());
-        data = (DataType*)calloc(totalSize, sizeof(DataType));
+        dataVec = std::vector<DataType>(totalSize, 0);
+        data = dataVec.data();
         dataAllocatedByMe = true;
         isMemoryMapped = false;
     }
     Tensor(const std::vector<ShapeT>& newShape) : shape(newShape) {
-        assert(newShape.size() >= 1);
+//        assert(newShape.size() >= 1);
+
         initializeShape(newShape);
         const ShapeT totalSize = std::accumulate(shape.begin(), shape.end(), (ShapeT)1, std::multiplies<ShapeT>());
-        data = (DataType*)calloc(totalSize, sizeof(DataType));
+        dataVec = std::vector<DataType>(totalSize, 0);
+        data = dataVec.data();
         dataAllocatedByMe = true;
         isMemoryMapped = false;
     }
 
     Tensor(DataType* ptr, const std::vector<ShapeT>& newShape) {
-        assert(newShape.size() >= 1);
+//        assert(newShape.size() >= 1);
+
         initializeShape(newShape);
         data = ptr;
         dataAllocatedByMe = false;
@@ -38,8 +43,7 @@ public:
     }
 
     ~Tensor() {
-        if(dataAllocatedByMe) {
-            free(data);
+        if(isMemoryMapped && data) {
         }
     }
 
@@ -59,7 +63,8 @@ public:
     }
 
     DataType* getData() {
-        assert(shape.size() > 0);
+//        assert(shape.size() > 0);
+
         return data;
     }
 
@@ -68,12 +73,16 @@ private:
     std::vector<ShapeT> strides;
     bool dataAllocatedByMe;
     DataType* data;
+    std::vector<DataType> dataVec;
 
     bool isMemoryMapped;
     int fdMemoryMapped;
 
     void initializeShape(const std::vector<ShapeT>& newShape) {
         strides = std::vector<ShapeT>(newShape.size());
+        if(newShape.size() == 0) {
+            return;
+        }
         strides[newShape.size() - 1] = 1;
         for(int i=(int)newShape.size()-2;i>=0;i--) {
             strides[i] = newShape[i] * strides[i-1];
@@ -81,10 +90,10 @@ private:
     }
 };
 
-template <typename DataType>
-class MemoryMappedTensor : public Tensor<DataType> {
-public:
-    MemoryMappedTensor(const char* filename) {
-
-    }
-};
+//template <typename DataType>
+//class MemoryMappedTensor : public Tensor<DataType> {
+//public:
+//    MemoryMappedTensor(const char* filename) {
+//
+//    }
+//};

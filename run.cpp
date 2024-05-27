@@ -99,9 +99,9 @@ struct Transformer {
     void build(char* checkpoint_path) {
         // read in the Config and the Weights from the checkpoint
         read_checkpoint(checkpoint_path, &config, &weights, &fd, &data, &file_size);
-
-//        // allocate the RunState buffers
+        // allocate the RunState buffers
 //        malloc_run_state(&t->state, &t->config);
+        state = RunState(&config);
     }
 
 private:
@@ -118,6 +118,7 @@ private:
         fseek(file, 0, SEEK_END); // move file pointer to end of file
         *file_size = ftell(file); // get the file size, in bytes
         fclose(file);
+
         // memory map the Transformer weights into the data pointer
         *fd = open(checkpoint, O_RDONLY); // open in read only mode
         if (*fd == -1) { fprintf(stderr, "open failed!\n"); exit(EXIT_FAILURE); }
@@ -1062,12 +1063,13 @@ int main(int argc, char **argv) {
     Transformer<float> transformer;
 //    build_transformer(&transformer, checkpoint_path);
     transformer.build(checkpoint_path);
-//    if (steps == 0 || steps > transformer.config.seq_len) steps = transformer.config.seq_len; // override to ~max length
+    if (steps == 0 || steps > transformer.config.seq_len)
+        steps = transformer.config.seq_len; // override to ~max length
 //
 //    // build the Tokenizer via the tokenizer .bin file
 //    Tokenizer tokenizer;
 //    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
-//
+
 //    // build the Sampler
 //    Sampler sampler;
 //    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
