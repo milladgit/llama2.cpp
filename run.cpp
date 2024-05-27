@@ -135,54 +135,42 @@ private:
         // make sure the multiplications below are done in 64bit to fit the parameter counts of 13B+ models
         ULL n_layers = p->n_layers;
 
-//    w->token_embedding_table = ptr;
         w->token_embedding_table = Tensor<float>(ptr, {(ULL)p->vocab_size, (ULL)p->dim});
         ptr += p->vocab_size * p->dim;
 
-//    w->rms_att_weight = ptr;
         w->rms_att_weight = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim});
         ptr += n_layers * p->dim;
 
-//    w->wq = ptr;
         w->wq = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)(p->n_heads * head_size)});
         ptr += n_layers * p->dim * (p->n_heads * head_size);
 
-//    w->wk = ptr;
         w->wk = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)(p->n_kv_heads * head_size)});
         ptr += n_layers * p->dim * (p->n_kv_heads * head_size);
 
-//    w->wv = ptr;
         w->wv = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)(p->n_kv_heads * head_size)});
         ptr += n_layers * p->dim * (p->n_kv_heads * head_size);
 
-//    w->wo = ptr;
         w->wo = Tensor<float>(ptr, {(ULL)n_layers, (ULL)(p->n_heads * head_size), (ULL)p->dim});
         ptr += n_layers * (p->n_heads * head_size) * p->dim;
 
-//    w->rms_ffn_weight = ptr;
         w->rms_ffn_weight = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim});
         ptr += n_layers * p->dim;
 
-//    w->w1 = ptr;
         w->w1 = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)p->hidden_dim});
         ptr += n_layers * p->dim * p->hidden_dim;
 
-//    w->w2 = ptr;
         w->w2 = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->hidden_dim, (ULL)p->dim});
         ptr += n_layers * p->hidden_dim * p->dim;
 
-//    w->w3 = ptr;
         w->w3 = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)p->hidden_dim});
         ptr += n_layers * p->dim * p->hidden_dim;
 
-//    w->rms_final_weight = ptr;
         w->rms_final_weight = Tensor<float>(ptr, {(ULL)p->dim});
         ptr += p->dim;
 
         ptr += p->seq_len * head_size / 2; // skip what used to be freq_cis_real (for RoPE)
         ptr += p->seq_len * head_size / 2; // skip what used to be freq_cis_imag (for RoPE)
 
-//    w->wcls = shared_weights ? w->token_embedding_table : ptr;
         w->wcls = Tensor<float>(shared_weights ? w->token_embedding_table.getData() : ptr, {}); // Problematic as we do not know its shape!
     }
 
@@ -1065,10 +1053,11 @@ int main(int argc, char **argv) {
     transformer.build(checkpoint_path);
     if (steps == 0 || steps > transformer.config.seq_len)
         steps = transformer.config.seq_len; // override to ~max length
-//
+
 //    // build the Tokenizer via the tokenizer .bin file
 //    Tokenizer tokenizer;
-//    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
+////    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
+//    tokenizer.build(tokenizer_path, transformer.config.vocab_size);
 
 //    // build the Sampler
 //    Sampler sampler;

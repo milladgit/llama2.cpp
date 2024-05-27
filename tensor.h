@@ -18,7 +18,7 @@ public:
         initializeShape(newShape);
         const ShapeT totalSize = std::accumulate(shape.begin(), shape.end(), (ShapeT)1, std::multiplies<ShapeT>());
         dataVec = std::vector<DataType>(totalSize, 0);
-        data = dataVec.data();
+        data = (DataType*)dataVec.data();
         dataAllocatedByMe = true;
         isMemoryMapped = false;
     }
@@ -28,7 +28,7 @@ public:
         initializeShape(newShape);
         const ShapeT totalSize = std::accumulate(shape.begin(), shape.end(), (ShapeT)1, std::multiplies<ShapeT>());
         dataVec = std::vector<DataType>(totalSize, 0);
-        data = dataVec.data();
+        data = (DataType*)dataVec.data();
         dataAllocatedByMe = true;
         isMemoryMapped = false;
     }
@@ -39,7 +39,7 @@ public:
         initializeShape(newShape);
         data = ptr;
         dataAllocatedByMe = false;
-        isMemoryMapped = false;
+        isMemoryMapped = true;
     }
 
     ~Tensor() {
