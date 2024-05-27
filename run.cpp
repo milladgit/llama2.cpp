@@ -16,6 +16,7 @@
 
 #include "tensor.h"
 #include "tokenizer.h"
+#include "sampler.h"
 
 // ----------------------------------------------------------------------------
 // Transformer model
@@ -1059,10 +1060,11 @@ int main(int argc, char **argv) {
 //    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
     tokenizer.build(tokenizer_path, transformer.config.vocab_size);
 
-//    // build the Sampler
-//    Sampler sampler;
+    // build the Sampler
+    Sampler sampler;
 //    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
-//
+    sampler.build(transformer.config.vocab_size, temperature, topp, rng_seed);
+
 //    // run!
 //    if (strcmp(mode, "generate") == 0) {
 //        generate(&transformer, &tokenizer, &sampler, prompt, steps);
