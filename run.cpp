@@ -14,168 +14,18 @@
     #include <sys/mman.h>
 #endif
 
+#include "config.h"
 #include "tensor.h"
+#include "transformer.h"
+#include "runstate.h"
 #include "tokenizer.h"
 #include "sampler.h"
+#include "generate.h"
 
 // ----------------------------------------------------------------------------
 // Transformer model
 
 
-struct Config {
-    int dim; // transformer dimension
-    int hidden_dim; // for ffn layers
-    int n_layers; // number of layers
-    int n_heads; // number of query heads
-    int n_kv_heads; // number of key/value heads (can be < query heads because of multiquery)
-    int vocab_size; // vocabulary size, usually 256 (byte-level)
-    int seq_len; // max sequence length
-};
-
-struct TransformerWeights {
-    // token embedding table
-    Tensor<float> token_embedding_table; // (vocab_size, dim)
-    // weights for rmsnorms
-    Tensor<float> rms_att_weight; // (layer, dim) rmsnorm weights
-    Tensor<float> rms_ffn_weight; // (layer, dim)
-    // weights for matmuls. note dim == n_heads * head_size
-    Tensor<float> wq; // (layer, dim, n_heads * head_size)
-    Tensor<float> wk; // (layer, dim, n_kv_heads * head_size)
-    Tensor<float> wv; // (layer, dim, n_kv_heads * head_size)
-    Tensor<float> wo; // (layer, n_heads * head_size, dim)
-    // weights for ffn
-    Tensor<float> w1; // (layer, hidden_dim, dim)
-    Tensor<float> w2; // (layer, dim, hidden_dim)
-    Tensor<float> w3; // (layer, hidden_dim, dim)
-    // final rmsnorm
-    Tensor<float> rms_final_weight; // (dim,)
-    // (optional) classifier weights for the logits, on the last layer
-    Tensor<float> wcls;
-};
-
-struct RunState {
-    // current wave of activations
-    Tensor<float> x; // activation at current time stamp (dim,)
-    Tensor<float> xb; // same, but inside a residual branch (dim,)
-    Tensor<float> xb2; // an additional buffer just for convenience (dim,)
-    Tensor<float> hb; // buffer for hidden dimension in the ffn (hidden_dim,)
-    Tensor<float> hb2; // buffer for hidden dimension in the ffn (hidden_dim,)
-    Tensor<float> q; // query (dim,)
-    Tensor<float> k; // key (dim,)
-    Tensor<float> v; // value (dim,)
-    Tensor<float> att; // buffer for scores/attention values (n_heads, seq_len)
-    Tensor<float> logits; // output logits
-    // kv cache
-    Tensor<float> key_cache;   // (layer, seq_len, dim)
-    Tensor<float> value_cache; // (layer, seq_len, dim)
-
-    RunState() {}
-
-    RunState(Config* p) {
-        using ULL = Tensor<int>::ShapeT;
-        const int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
-        x = Tensor<float>({(ULL)p->dim});
-        xb = Tensor<float>({(ULL)p->dim});
-        xb2 = Tensor<float>({(ULL)p->dim});
-        hb = Tensor<float>({(ULL)p->hidden_dim});
-        hb2 = Tensor<float>({(ULL)p->hidden_dim});
-        q = Tensor<float>({(ULL)p->dim});
-        key_cache = Tensor<float>({(ULL)p->n_layers, (ULL)p->seq_len, (ULL)kv_dim});
-        value_cache = Tensor<float>({(ULL)p->n_layers, (ULL)p->seq_len, (ULL)kv_dim});
-        att = Tensor<float>({(ULL)p->n_heads, (ULL)p->seq_len});
-        logits = Tensor<float>({(ULL)p->vocab_size});
-    }
-};
-
-template <typename DataType>
-struct Transformer {
-    Config config; // the hyperparameters of the architecture (the blueprint)
-    TransformerWeights weights; // the weights of the model
-    RunState state; // buffers for the "wave" of activations in the forward pass
-    // some more state needed to properly clean up the memory mapping (sigh)
-    int fd; // file descriptor for memory mapping
-    DataType* data; // memory mapped data pointer
-    ssize_t file_size; // size of the checkpoint file in bytes
-
-    void build(char* checkpoint_path) {
-        // read in the Config and the Weights from the checkpoint
-        read_checkpoint(checkpoint_path, &config, &weights, &fd, &data, &file_size);
-        // allocate the RunState buffers
-//        malloc_run_state(&t->state, &t->config);
-        state = RunState(&config);
-    }
-
-private:
-    void read_checkpoint(char* checkpoint, Config* config, TransformerWeights* weights,
-                         int* fd, DataType** data, ssize_t* file_size) {
-        FILE *file = fopen(checkpoint, "rb");
-        if (!file) { fprintf(stderr, "Couldn't open file %s\n", checkpoint); exit(EXIT_FAILURE); }
-        // read in the config header
-        if (fread(config, sizeof(Config), 1, file) != 1) { exit(EXIT_FAILURE); }
-        // negative vocab size is hacky way of signaling unshared weights. bit yikes.
-        int shared_weights = config->vocab_size > 0 ? 1 : 0;
-        config->vocab_size = abs(config->vocab_size);
-        // figure out the file size
-        fseek(file, 0, SEEK_END); // move file pointer to end of file
-        *file_size = ftell(file); // get the file size, in bytes
-        fclose(file);
-
-        // memory map the Transformer weights into the data pointer
-        *fd = open(checkpoint, O_RDONLY); // open in read only mode
-        if (*fd == -1) { fprintf(stderr, "open failed!\n"); exit(EXIT_FAILURE); }
-        *data = (DataType*)mmap(NULL, *file_size, PROT_READ, MAP_PRIVATE, *fd, 0);
-        if (*data == MAP_FAILED) { fprintf(stderr, "mmap failed!\n"); exit(EXIT_FAILURE); }
-        float* weights_ptr = *data + sizeof(Config)/sizeof(float);
-        memory_map_weights(weights, config, weights_ptr, shared_weights);
-    }
-
-    void memory_map_weights(TransformerWeights *w, Config* p, float* ptr, int shared_weights) {
-        using ULL = Tensor<int>::ShapeT;
-
-        int head_size = p->dim / p->n_heads;
-        // make sure the multiplications below are done in 64bit to fit the parameter counts of 13B+ models
-        ULL n_layers = p->n_layers;
-
-        w->token_embedding_table = Tensor<float>(ptr, {(ULL)p->vocab_size, (ULL)p->dim});
-        ptr += p->vocab_size * p->dim;
-
-        w->rms_att_weight = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim});
-        ptr += n_layers * p->dim;
-
-        w->wq = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)(p->n_heads * head_size)});
-        ptr += n_layers * p->dim * (p->n_heads * head_size);
-
-        w->wk = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)(p->n_kv_heads * head_size)});
-        ptr += n_layers * p->dim * (p->n_kv_heads * head_size);
-
-        w->wv = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)(p->n_kv_heads * head_size)});
-        ptr += n_layers * p->dim * (p->n_kv_heads * head_size);
-
-        w->wo = Tensor<float>(ptr, {(ULL)n_layers, (ULL)(p->n_heads * head_size), (ULL)p->dim});
-        ptr += n_layers * (p->n_heads * head_size) * p->dim;
-
-        w->rms_ffn_weight = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim});
-        ptr += n_layers * p->dim;
-
-        w->w1 = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)p->hidden_dim});
-        ptr += n_layers * p->dim * p->hidden_dim;
-
-        w->w2 = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->hidden_dim, (ULL)p->dim});
-        ptr += n_layers * p->hidden_dim * p->dim;
-
-        w->w3 = Tensor<float>(ptr, {(ULL)n_layers, (ULL)p->dim, (ULL)p->hidden_dim});
-        ptr += n_layers * p->dim * p->hidden_dim;
-
-        w->rms_final_weight = Tensor<float>(ptr, {(ULL)p->dim});
-        ptr += p->dim;
-
-        ptr += p->seq_len * head_size / 2; // skip what used to be freq_cis_real (for RoPE)
-        ptr += p->seq_len * head_size / 2; // skip what used to be freq_cis_imag (for RoPE)
-
-        w->wcls = Tensor<float>(shared_weights ? w->token_embedding_table.getData() : ptr, {}); // Problematic as we do not know its shape!
-    }
-
-};
 
 #if 0
 
@@ -818,74 +668,10 @@ int sample(Sampler* sampler, float* logits) {
     return next;
 }
 
-// ----------------------------------------------------------------------------
-// utilities: time
+#endif  // #if 0: Disabling most part of the code for step-by-step changing!
 
-long time_in_ms() {
-    // return time in milliseconds, for benchmarking the model speed
-    struct timespec time;
-    clock_gettime(CLOCK_REALTIME, &time);
-    return time.tv_sec * 1000 + time.tv_nsec / 1000000;
-}
 
-// ----------------------------------------------------------------------------
-// generation loop
-
-void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, char *prompt, int steps) {
-    char *empty_prompt = "";
-    if (prompt == NULL) { prompt = empty_prompt; }
-
-    // encode the (string) prompt into tokens sequence
-    int num_prompt_tokens = 0;
-    int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
-    encode(tokenizer, prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
-    if (num_prompt_tokens < 1) {
-        fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
-        exit(EXIT_FAILURE);
-    }
-
-    // start the main loop
-    long start = 0;  // used to time our code, only initialized after first iteration
-    int next;        // will store the next token in the sequence
-    int token = prompt_tokens[0]; // kick off with the first token in the prompt
-    int pos = 0;     // position in the sequence
-    while (pos < steps) {
-
-        // forward the transformer to get logits for the next token
-        float* logits = forward(transformer, token, pos);
-
-        // advance the state machine
-        if (pos < num_prompt_tokens - 1) {
-            // if we are still processing the input prompt, force the next prompt token
-            next = prompt_tokens[pos + 1];
-        } else {
-            // otherwise sample the next token from the logits
-            next = sample(sampler, logits);
-        }
-        pos++;
-
-        // data-dependent terminating condition: the BOS (=1) token delimits sequences
-        if (next == 1) { break; }
-
-        // print the token as string, decode it with the Tokenizer object
-        char* piece = decode(tokenizer, token, next);
-        safe_printf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
-        fflush(stdout);
-        token = next;
-
-        // init the timer here because the first iteration can be slower
-        if (start == 0) { start = time_in_ms(); }
-    }
-    printf("\n");
-
-    // report achieved tok/s (pos-1 because the timer starts after first iteration)
-    if (pos > 1) {
-        long end = time_in_ms();
-        fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
-    }
-
-    free(prompt_tokens);
-}
+#if 0
 
 void read_stdin(const char* guide, char* buffer, size_t bufsize) {
     // read a line from stdin, up to but not including \n
@@ -988,8 +774,7 @@ void chat(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
     free(prompt_tokens);
 }
 
-#endif  // #if 0: Disabling most part of the code for step-by-step changing!
-
+#endif
 
 // ----------------------------------------------------------------------------
 // CLI, include only if not testing
@@ -1065,16 +850,16 @@ int main(int argc, char **argv) {
 //    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
     sampler.build(transformer.config.vocab_size, temperature, topp, rng_seed);
 
-//    // run!
-//    if (strcmp(mode, "generate") == 0) {
-//        generate(&transformer, &tokenizer, &sampler, prompt, steps);
+    // run!
+    if (strcmp(mode, "generate") == 0) {
+        generate(&transformer, &tokenizer, &sampler, prompt, steps);
 //    } else if (strcmp(mode, "chat") == 0) {
 //        chat(&transformer, &tokenizer, &sampler, prompt, system_prompt, steps);
 //    } else {
 //        fprintf(stderr, "unknown mode: %s\n", mode);
 //        error_usage();
-//    }
-//
+    }
+
 //    // memory and file handles cleanup
 //    free_sampler(&sampler);
 //    free_tokenizer(&tokenizer);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tokenizer.h"
+#include "transformer.h"
 
 #include <sstream>
 
@@ -150,7 +151,8 @@ long time_in_ms() {
 // ----------------------------------------------------------------------------
 // generation loop
 
-void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, char *prompt, int steps) {
+template<typename DataType>
+void generate(Transformer<DataType> *transformer, Tokenizer *tokenizer, Sampler *sampler, char *prompt, int steps) {
     char *empty_prompt = "";
     if (prompt == NULL) { prompt = empty_prompt; }
 
