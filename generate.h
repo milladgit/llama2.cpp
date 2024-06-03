@@ -12,6 +12,292 @@ int str_lookup(char *str, std::vector<TokenIndex>& sorted_vocab, int vocab_size)
     return res != NULL ? res->id : -1;
 }
 
+// ----------------------------------------------------------------------------
+// neural net blocks; the dynamics of the Transformer
+
+void softmax(float* x, int size) {
+    // find max value (for numerical stability)
+    float max_val = x[0];
+    for (int i = 1; i < size; i++) {
+        if (x[i] > max_val) {
+            max_val = x[i];
+        }
+    }
+    // exp and sum
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++) {
+        x[i] = expf(x[i] - max_val);
+        sum += x[i];
+    }
+    // normalize
+    for (int i = 0; i < size; i++) {
+        x[i] /= sum;
+    }
+}
+
+void softmax(Tensor<float>& x, int size) {
+    // only 1D support for now!
+    assert(x.getShape().size() == 1);
+    softmax(x.getData(), size);
+}
+
+void rmsnorm(Tensor<float>& o, const Tensor<float>& x, const Tensor<float>& weight, int size) {
+
+    auto print = [](const Tensor<float>& t) -> std::string {
+        if (t.getShape().size() == 0) {
+            return "";
+        }
+        std::stringstream ss;
+        ss << "[";
+        for(auto x : t.getShape()) {
+            ss << x << ", ";
+        }
+        ss << "]";
+        return ss.str();
+    };
+
+    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__
+                << "    "
+            << print(o) << "   "
+            << print(x) << "   "
+            << print(weight) << "   "
+            << std::endl;
+
+    // calculate sum of squares
+    float ss = 0.0f;
+    for (int j = 0; j < size; j++) {
+        ss += x(j) * x(j);
+    }
+    ss /= size;
+    ss += 1e-5f;
+    ss = 1.0f / sqrtf(ss);
+    // normalize and scale
+    for (int j = 0; j < size; j++) {
+        o(j) = weight(0, j) * (ss * x(j));
+    }
+}
+
+void matmul(Tensor<float>& xout, const Tensor<float>& x, const Tensor<float>& w, int n, int d) {
+
+    auto print = [](const Tensor<float>& t) -> std::string {
+        if (t.getShape().size() == 0) {
+            return "";
+        }
+        std::stringstream ss;
+        ss << "[";
+        for(auto x : t.getShape()) {
+            ss << x << ", ";
+        }
+        ss << "]";
+        return ss.str();
+    };
+
+    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__
+              << "    "
+              << print(xout) << "   "
+              << print(x) << "   "
+              << print(w) << "   "
+              << std::endl;
+
+    // W (d,n) @ x (n,) -> xout (d,)
+    // by far the most amount of time is spent inside this little function
+    int i;
+#pragma omp parallel for private(i)
+    for (i = 0; i < d; i++) {
+        float val = 0.0f;
+        for (int j = 0; j < n; j++) {
+//            val += w(i * n + j) * x(j);
+            val += w(0, i, j) * x(j);
+        }
+        xout(i) = val;
+    }
+}
+
+template <typename DataType>
+Tensor<float> forward(Transformer<DataType>* transformer, int token, int pos) {
+
+    // a few convenience variables
+    Config* p = &transformer->config;
+    TransformerWeights* w = &transformer->weights;
+    RunState* s = &transformer->state;
+    auto& x = s->x;
+    int dim = p->dim;
+    int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
+    int kv_mul = p->n_heads / p->n_kv_heads; // integer multiplier of the kv sharing in multiquery
+    int hidden_dim =  p->hidden_dim;
+    int head_size = dim / p->n_heads;
+
+    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+    // copy the token embedding into x
+//    float* content_row = w->token_embedding_table + token * dim;
+    auto* content_row = w->token_embedding_table + token * dim;
+    memcpy(x.getData(), content_row.getData(), dim * sizeof(float));
+
+    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+    // forward all the layers
+    for(unsigned long long l = 0; l < p->n_layers; l++) {
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // attention rmsnorm
+//        rmsnorm(s->xb, x, w->rms_att_weight + l*dim, dim);
+        rmsnorm(s->xb, x, w->rms_att_weight.cropWithOffset({l, 0ULL}), dim);
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // key and value point to the kv cache
+        int loff = l * p->seq_len * kv_dim; // kv cache layer offset for convenience
+//        s->k = s->key_cache + loff + pos * kv_dim;
+//        s->v = s->value_cache + loff + pos * kv_dim;
+        s->k = s->key_cache.cropWithOffset({l, (unsigned long long)pos, 0ULL});
+        s->v = s->value_cache.cropWithOffset({l, (unsigned long long)pos, 0ULL});
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // qkv matmuls for this position
+//        matmul(s->q, s->xb, w->wq + l*dim*dim, dim, dim);
+//        matmul(s->k, s->xb, w->wk + l*dim*kv_dim, dim, kv_dim);
+//        matmul(s->v, s->xb, w->wv + l*dim*kv_dim, dim, kv_dim);
+        matmul(s->q, s->xb, w->wq.cropWithOffset({l, 0ULL, 0ULL}), dim, dim);
+        matmul(s->k, s->xb, w->wk.cropWithOffset({l, 0ULL, 0ULL}), dim, kv_dim);
+        matmul(s->v, s->xb, w->wv.cropWithOffset({l, 0ULL, 0ULL}), dim, kv_dim);
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // RoPE relative positional encoding: complex-valued rotate q and k in each head
+        for (int i = 0; i < dim; i+=2) {
+            int head_dim = i % head_size;
+            float freq = 1.0f / powf(10000.0f, head_dim / (float)head_size);
+            float val = pos * freq;
+            float fcr = cosf(val);
+            float fci = sinf(val);
+            int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+            for (int v = 0; v < rotn; v++) {
+                auto& vec = v == 0 ? s->q : s->k; // the vector to rotate (query or key)
+                float v0 = vec(i);
+                float v1 = vec(i+1);
+                vec(i)   = v0 * fcr - v1 * fci;
+                vec(i+1) = v0 * fci + v1 * fcr;
+            }
+        }
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // multihead attention. iterate over all heads
+        int h;
+#pragma omp parallel for private(h)
+        for (h = 0; h < p->n_heads; h++) {
+            // get the query vector for this head
+//            float* q = s->q + h * head_size;
+            auto q = s->q.cropWithOffset({h});
+            // attention scores for this head
+//            float* att = s->att + h * p->seq_len;
+            auto att = s->att.template cropWithOffset({h, 0});
+            // iterate over all timesteps, including the current one
+            for (int t = 0; t <= pos; t++) {
+                // get the key vector for this head and at this timestep
+                float* k = s->key_cache.getData() + loff + t * kv_dim + (h / kv_mul) * head_size;
+                // calculate the attention score as the dot product of q and k
+                float score = 0.0f;
+                for (int i = 0; i < head_size; i++) {
+                    score += q(i) * k[i];
+                }
+                score /= sqrtf(head_size);
+                // save the score to the attention buffer
+                att(t) = score;
+            }
+
+            // softmax the scores to get attention weights, from 0..pos inclusively
+            softmax(att, pos + 1);
+
+            std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+            // weighted sum of the values, store back into xb
+//            float* xb = s->xb + h * head_size;
+            auto xb = s->xb.template cropWithOffset({h});
+            memset(xb.getData(), 0, head_size * sizeof(float));
+            for (int t = 0; t <= pos; t++) {
+                // get the value vector for this head and at this timestep
+                float* v = s->value_cache.getData() + loff + t * kv_dim + (h / kv_mul) * head_size;
+                // get the attention weight for this timestep
+                float a = att(t);
+                // accumulate the weighted value into xb
+                for (int i = 0; i < head_size; i++) {
+                    xb(i) += a * v[i];
+                }
+            }
+        }
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // final matmul to get the output of the attention
+//        matmul(s->xb2, s->xb, w->wo + l*dim*dim, dim, dim);
+        matmul(s->xb2, s->xb, w->wo.cropWithOffset({l, 0ULL, 0ULL}), dim, dim);
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // residual connection back into x
+        for (int i = 0; i < dim; i++) {
+            x(i) += s->xb2(i);
+        }
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // ffn rmsnorm
+//        rmsnorm(s->xb, x, w->rms_ffn_weight + l*dim, dim);
+        rmsnorm(s->xb, x, w->rms_ffn_weight.cropWithOffset({l, 0ULL}), dim);
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+
+        // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
+        // first calculate self.w1(x) and self.w3(x)
+//        matmul(s->hb, s->xb, w->w1 + l*dim*hidden_dim, dim, hidden_dim);
+//        matmul(s->hb2, s->xb, w->w3 + l*dim*hidden_dim, dim, hidden_dim);
+        matmul(s->hb, s->xb, w->w1.cropWithOffset({l, 0ULL, 0ULL}), dim, hidden_dim);
+        matmul(s->hb2, s->xb, w->w3.cropWithOffset({l, 0ULL, 0ULL}), dim, hidden_dim);
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // SwiGLU non-linearity
+        for (int i = 0; i < hidden_dim; i++) {
+//            float val = s->hb[i];
+            float val = s->hb(i);
+            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
+            val *= (1.0f / (1.0f + expf(-val)));
+            // elementwise multiply with w3(x)
+            val *= s->hb2(i);
+//            s->hb[i] = val;
+            s->hb(i) = val;
+        }
+
+        std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+        // final matmul to get the output of the ffn
+//        matmul(s->xb, s->hb, w->w2 + l*dim*hidden_dim, hidden_dim, dim);
+        matmul(s->xb, s->hb, w->w2.cropWithOffset({l, 0ULL, 0ULL}), hidden_dim, dim);
+
+        // residual connection
+        for (int i = 0; i < dim; i++) {
+            x(i) += s->xb(i);
+        }
+    }
+
+    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+    // final rmsnorm
+    rmsnorm(x, x, w->rms_final_weight, dim);
+
+    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__ << std::endl;
+
+    // classifier into logits
+//    matmul(s->logits, x, w->wcls, p->dim, p->vocab_size);
+    matmul(s->logits, x, w->wcls.cropWithOffset({p->dim}), p->dim, p->vocab_size);
+    return s->logits;
+}
+
 void encode(Tokenizer* t, char *text, int8_t bos, int8_t eos, std::vector<int>& tokens, int *n_tokens) {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
@@ -166,16 +452,17 @@ void generate(Transformer<DataType> *transformer, Tokenizer *tokenizer, Sampler 
         exit(EXIT_FAILURE);
     }
 
-//    // start the main loop
-//    long start = 0;  // used to time our code, only initialized after first iteration
-//    int next;        // will store the next token in the sequence
-//    int token = prompt_tokens[0]; // kick off with the first token in the prompt
-//    int pos = 0;     // position in the sequence
-//    while (pos < steps) {
-//
-//        // forward the transformer to get logits for the next token
+    // start the main loop
+    long start = 0;  // used to time our code, only initialized after first iteration
+    int next;        // will store the next token in the sequence
+    int token = prompt_tokens[0]; // kick off with the first token in the prompt
+    int pos = 0;     // position in the sequence
+    while (pos < steps) {
+
+        // forward the transformer to get logits for the next token
 //        float* logits = forward(transformer, token, pos);
-//
+        auto logits = forward(transformer, token, pos);
+
 //        // advance the state machine
 //        if (pos < num_prompt_tokens - 1) {
 //            // if we are still processing the input prompt, force the next prompt token
@@ -194,11 +481,11 @@ void generate(Transformer<DataType> *transformer, Tokenizer *tokenizer, Sampler 
 //        safe_printf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
 //        fflush(stdout);
 //        token = next;
-//
+
 //        // init the timer here because the first iteration can be slower
 //        if (start == 0) { start = time_in_ms(); }
-//    }
-//    printf("\n");
+    }
+    printf("\n");
 //
 //    // report achieved tok/s (pos-1 because the timer starts after first iteration)
 //    if (pos > 1) {
