@@ -396,34 +396,46 @@ float* forward(Transformer* transformer, int token, int pos) {
     return s->logits;
 }
 
+#endif
+
 // ----------------------------------------------------------------------------
 // The Byte Pair Encoding (BPE) Tokenizer that translates strings <-> tokens
 
-typedef struct {
+struct TokenIndex {
     char *str;
     int id;
-} TokenIndex;
+};
 
-typedef struct {
-    char** vocab;
-    float* vocab_scores;
-    TokenIndex *sorted_vocab;
+template <typename T>
+struct Tokenizer {
+//    char** vocab;
+//    float* vocab_scores;
+//    TokenIndex *sorted_vocab;
+    std::vector<std::vector<char>> vocab;
+    std::vector<T> vocab_scores;
+    std::vector<TokenIndex> sorted_vocab;
     int vocab_size;
     unsigned int max_token_length;
     unsigned char byte_pieces[512]; // stores all single-byte strings
-} Tokenizer;
+
+    Tokenizer() {}
+};
 
 int compare_tokens(const void *a, const void *b) {
     return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-void build_tokenizer(Tokenizer* t, char* tokenizer_path, int vocab_size) {
+template <typename T>
+void build_tokenizer(Tokenizer<T>* t, char* tokenizer_path, int vocab_size) {
     // i should have written the vocab_size into the tokenizer file... sigh
     t->vocab_size = vocab_size;
     // malloc space to hold the scores and the strings
-    t->vocab = (char**)malloc(vocab_size * sizeof(char*));
-    t->vocab_scores = (float*)malloc(vocab_size * sizeof(float));
-    t->sorted_vocab = NULL; // initialized lazily
+//    t->vocab = (char**)malloc(vocab_size * sizeof(char*));
+//    t->vocab_scores = (float*)malloc(vocab_size * sizeof(float));
+    t->vocab.resize(vocab_size);
+    t->vocab_scores.resize(vocab_size);
+
+//    t->sorted_vocab = NULL; // initialized lazily
     for (int i = 0; i < 256; i++) {
         t->byte_pieces[i * 2] = (unsigned char)i;
         t->byte_pieces[i * 2 + 1] = '\0';
@@ -434,21 +446,26 @@ void build_tokenizer(Tokenizer* t, char* tokenizer_path, int vocab_size) {
     if (fread(&t->max_token_length, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
     int len;
     for (int i = 0; i < vocab_size; i++) {
-        if (fread(t->vocab_scores + i, sizeof(float), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE);}
+        if (fread(&t->vocab_scores[i], sizeof(float), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE);}
         if (fread(&len, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
-        t->vocab[i] = (char *)malloc(len + 1);
-        if (fread(t->vocab[i], len, 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
+//        t->vocab[i] = (char *)malloc(len + 1);
+        t->vocab[i].resize(len + 1);
+        if (fread(t->vocab[i].data(), len, 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
         t->vocab[i][len] = '\0'; // add the string terminating token
     }
     fclose(file);
 }
 
-void free_tokenizer(Tokenizer* t) {
-    for (int i = 0; i < t->vocab_size; i++) { free(t->vocab[i]); }
-    free(t->vocab);
-    free(t->vocab_scores);
-    free(t->sorted_vocab);
+template <typename T>
+void free_tokenizer(Tokenizer<T>* t) {
+//    for (int i = 0; i < t->vocab_size; i++) { free(t->vocab[i]); }
+//    free(t->vocab);
+//    free(t->vocab_scores);
+//    free(t->sorted_vocab);
 }
+
+
+#if 0
 
 char* decode(Tokenizer* t, int prev_token, int token) {
     char *piece = t->vocab[token];
@@ -977,15 +994,17 @@ int main(int argc, char *argv[]) {
     if (topp < 0.0 || 1.0 < topp) topp = 0.9;
     if (steps < 0) steps = 0;
 
+    using DataType = float;
+
     // build the Transformer via the model .bin file
-    Transformer<float> transformer;
+    Transformer<DataType> transformer;
     build_transformer(&transformer, checkpoint_path);
     if (steps == 0 || steps > transformer.config.seq_len) steps = transformer.config.seq_len; // override to ~max length
 
-//    // build the Tokenizer via the tokenizer .bin file
-//    Tokenizer tokenizer;
-//    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
-//
+    // build the Tokenizer via the tokenizer .bin file
+    Tokenizer<DataType> tokenizer;
+    build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
+
 //    // build the Sampler
 //    Sampler sampler;
 //    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
