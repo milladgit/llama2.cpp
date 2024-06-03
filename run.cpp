@@ -622,22 +622,41 @@ void encode(Tokenizer* t, char *text, int8_t bos, int8_t eos, int *tokens, int *
     free(str_buffer);
 }
 
+#endif
+
 // ----------------------------------------------------------------------------
 // The Sampler, which takes logits and returns a sampled token
 // sampling can be done in a few ways: greedy argmax, sampling, top-p sampling
 
-typedef struct {
+// TODO: Making float a template param
+//template<typename T>
+struct ProbIndex {
     float prob;
     int index;
-} ProbIndex; // struct used when sorting probabilities during top-p sampling
+}; // struct used when sorting probabilities during top-p sampling
 
-typedef struct {
+template<typename T>
+struct Sampler {
+    static_assert(std::is_same_v<T, float>);
+
     int vocab_size;
-    ProbIndex* probindex; // buffer used in top-p sampling
-    float temperature;
-    float topp;
+//    ProbIndex* probindex; // buffer used in top-p sampling
+    std::vector<ProbIndex> probindex; // buffer used in top-p sampling
+    T temperature;
+    T topp;
     unsigned long long rng_state;
-} Sampler;
+
+    Sampler() {}
+
+    void allocate(int vocab_size, T temperature, T topp, unsigned long long rng_seed) {
+        this->vocab_size = vocab_size;
+        this->temperature = temperature;
+        this->topp = topp;
+        this->rng_state = rng_seed;
+        // buffer only used with nucleus sampling; may not need but it's ~small
+        probindex.resize(vocab_size);
+    }
+};
 
 int sample_argmax(float* probabilities, int n) {
     // return the index that has the highest probability
@@ -716,18 +735,24 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
     return probindex[last_idx].index; // in case of rounding errors
 }
 
-void build_sampler(Sampler* sampler, int vocab_size, float temperature, float topp, unsigned long long rng_seed) {
-    sampler->vocab_size = vocab_size;
-    sampler->temperature = temperature;
-    sampler->topp = topp;
-    sampler->rng_state = rng_seed;
-    // buffer only used with nucleus sampling; may not need but it's ~small
-    sampler->probindex = malloc(sampler->vocab_size * sizeof(ProbIndex));
+template<typename T>
+void build_sampler(Sampler<T>* sampler, int vocab_size, T temperature, T topp, unsigned long long rng_seed) {
+//    sampler->vocab_size = vocab_size;
+//    sampler->temperature = temperature;
+//    sampler->topp = topp;
+//    sampler->rng_state = rng_seed;
+//    // buffer only used with nucleus sampling; may not need but it's ~small
+//    sampler->probindex = malloc(sampler->vocab_size * sizeof(ProbIndex));
+
+    sampler->allocate(vocab_size, temperature, topp, rng_seed);
 }
 
-void free_sampler(Sampler* sampler) {
-    free(sampler->probindex);
+template<typename T>
+void free_sampler(Sampler<T>* sampler) {
+//    free(sampler->probindex);
 }
+
+#if 0
 
 unsigned int random_u32(unsigned long long *state) {
     // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
@@ -1005,10 +1030,10 @@ int main(int argc, char *argv[]) {
     Tokenizer<DataType> tokenizer;
     build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
 
-//    // build the Sampler
-//    Sampler sampler;
-//    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
-//
+    // build the Sampler
+    Sampler<DataType> sampler;
+    build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
+
 //    // run!
 //    if (strcmp(mode, "generate") == 0) {
 //        generate(&transformer, &tokenizer, &sampler, prompt, steps);
