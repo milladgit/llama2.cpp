@@ -716,23 +716,26 @@ struct Sampler {
     }
 };
 
-int sample_argmax(float* probabilities, int n) {
+template <typename T>
+int sample_argmax(T* probabilities, int n) {
     // return the index that has the highest probability
-    int max_i = 0;
-    float max_p = probabilities[0];
-    for (int i = 1; i < n; i++) {
-        if (probabilities[i] > max_p) {
-            max_i = i;
-            max_p = probabilities[i];
-        }
-    }
-    return max_i;
+    return std::max_element(probabilities, probabilities + n) - probabilities;
+//    int max_i = 0;
+//    T max_p = probabilities[0];
+//    for (int i = 1; i < n; i++) {
+//        if (probabilities[i] > max_p) {
+//            max_i = i;
+//            max_p = probabilities[i];
+//        }
+//    }
+//    return max_i;
 }
 
-int sample_mult(float* probabilities, int n, float coin) {
+template <typename T>
+int sample_mult(T* probabilities, int n, T coin) {
     // sample index from probabilities (they must sum to 1!)
     // coin is a random number in [0, 1), usually from random_f32()
-    float cdf = 0.0f;
+    T cdf = 0.0f;
     for (int i = 0; i < n; i++) {
         cdf += probabilities[i];
         if (coin < cdf) {
@@ -742,7 +745,7 @@ int sample_mult(float* probabilities, int n, float coin) {
     return n - 1; // in case of rounding errors
 }
 
-int compare(const void* a, const void* b) {
+int compare_prob_index(const void* a, const void* b) {
     ProbIndex* a_ = (ProbIndex*) a;
     ProbIndex* b_ = (ProbIndex*) b;
     if (a_->prob > b_->prob) return -1;
@@ -750,7 +753,8 @@ int compare(const void* a, const void* b) {
     return 0;
 }
 
-int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, float coin) {
+template <typename T>
+int sample_topp(T* probabilities, int n, T topp, ProbIndex* probindex, T coin) {
     // top-p sampling (or "nucleus sampling") samples from the smallest set of
     // tokens that exceed probability topp. This way we never sample tokens that
     // have very low probabilities and are less likely to go "off the rails".
@@ -760,7 +764,7 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
     // quicksort indices in descending order of probabilities
     // values smaller than (1 - topp) / (n - 1) cannot be part of the result
     // so for efficiency we crop these out as candidates before sorting
-    const float cutoff = (1.0f - topp) / (n - 1);
+    const T cutoff = (T(1) - topp) / (n - 1);
     for (int i = 0; i < n; i++) {
         if (probabilities[i] >= cutoff) {
             probindex[n0].index = i;
@@ -768,10 +772,20 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
             n0++;
         }
     }
-    qsort(probindex, n0, sizeof(ProbIndex), compare);
+//    qsort(probindex, n0, sizeof(ProbIndex), compare_prob_index);
+    constexpr bool USE_QSORT = false;
+    if constexpr(USE_QSORT) {
+        qsort(probindex, n0, sizeof(ProbIndex), compare_prob_index);
+    } else {
+        std::sort(probindex, probindex + n0, [](const ProbIndex& a, const ProbIndex& b) {
+            if (a.prob > b.prob) return -1;
+            else if (a.prob < b.prob) return 1;
+            else return 0;
+        });
+    }
 
     // truncate the list where cumulative probability exceeds topp
-    float cumulative_prob = 0.0f;
+    T cumulative_prob = 0.0f;
     int last_idx = n0 - 1; // in case of rounding errors consider all elements
     for (int i = 0; i < n0; i++) {
         cumulative_prob += probindex[i].prob;
@@ -782,8 +796,8 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
     }
 
     // sample from the truncated list
-    float r = coin * cumulative_prob;
-    float cdf = 0.0f;
+    T r = coin * cumulative_prob;
+    T cdf = T(0);
     for (int i = 0; i <= last_idx; i++) {
         cdf += probindex[i].prob;
         if (r < cdf) {
@@ -810,7 +824,6 @@ void free_sampler(Sampler<T>* sampler) {
 //    free(sampler->probindex);
 }
 
-#if 0
 
 unsigned int random_u32(unsigned long long *state) {
     // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
@@ -823,10 +836,14 @@ float random_f32(unsigned long long *state) { // random float32 in [0,1)
     return (random_u32(state) >> 8) / 16777216.0f;
 }
 
-int sample(Sampler* sampler, float* logits) {
+template <typename T>
+int sample(Sampler<T>* sampler, T* logits) {
+    // for new dtypes, implement random_f32 and random_u32
+    static_assert(std::is_same_v<T, float>);
+
     // sample the token given the logits and some hyperparameters
     int next;
-    if (sampler->temperature == 0.0f) {
+    if (sampler->temperature == T(0)) {
         // greedy argmax sampling: take the token with the highest probability
         next = sample_argmax(logits, sampler->vocab_size);
     } else {
@@ -835,19 +852,20 @@ int sample(Sampler* sampler, float* logits) {
         // apply softmax to the logits to get the probabilities for next token
         softmax(logits, sampler->vocab_size);
         // flip a (float) coin (this is our source of entropy for sampling)
-        float coin = random_f32(&sampler->rng_state);
+        T coin = random_f32(&sampler->rng_state);
         // we sample from this distribution to get the next token
         if (sampler->topp <= 0 || sampler->topp >= 1) {
             // simply sample from the predicted probability distribution
             next = sample_mult(logits, sampler->vocab_size, coin);
         } else {
             // top-p (nucleus) sampling, clamping the least likely tokens to zero
-            next = sample_topp(logits, sampler->vocab_size, sampler->topp, sampler->probindex, coin);
+            next = sample_topp(logits, sampler->vocab_size, sampler->topp, sampler->probindex.data(), coin);
         }
     }
     return next;
 }
 
+#if 0
 #endif
 
 // ----------------------------------------------------------------------------
@@ -894,16 +912,23 @@ void generate(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *
             i++;
         }
 
-//        // advance the state machine
-//        if (pos < num_prompt_tokens - 1) {
-//            // if we are still processing the input prompt, force the next prompt token
-//            next = prompt_tokens[pos + 1];
-//        } else {
-//            // otherwise sample the next token from the logits
-//            next = sample(sampler, logits);
-//        }
+        // advance the state machine
+        if (pos < num_prompt_tokens - 1) {
+            // if we are still processing the input prompt, force the next prompt token
+            next = prompt_tokens[pos + 1];
+        } else {
+            // otherwise sample the next token from the logits
+            next = sample(sampler, logits);
+
+            {
+                static int i = 0;
+                if(i%100000 == 0)
+                    std::cout << "    MILLAD:   preventing sample from being removed" << next << std::endl;
+                i++;
+            }
+        }
         pos++;
-//
+
 //        // data-dependent terminating condition: the BOS (=1) token delimits sequences
 //        if (next == 1) { break; }
 //
