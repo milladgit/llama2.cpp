@@ -507,8 +507,8 @@ void free_tokenizer(Tokenizer<T>* t) {
 //    free(t->sorted_vocab);
 }
 
-
-//char* decode(Tokenizer* t, int prev_token, int token) {
+template <typename T>
+char* decode(Tokenizer<T>* t, int prev_token, int token) {
 //    char *piece = t->vocab[token];
 //    // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
 //    if (prev_token == 1 && piece[0] == ' ') { piece++; }
@@ -519,21 +519,32 @@ void free_tokenizer(Tokenizer<T>* t) {
 //        piece = (char*)t->byte_pieces + byte_val * 2;
 //    }
 //    return piece;
-//}
-//
-//void safe_printf(char *piece) {
-//    // piece might be a raw byte token, and we only want to print printable chars or whitespace
-//    // because some of the other bytes can be various control codes, backspace, etc.
-//    if (piece == NULL) { return; }
-//    if (piece[0] == '\0') { return; }
-//    if (piece[1] == '\0') {
-//        unsigned char byte_val = piece[0];
-//        if (!(isprint(byte_val) || isspace(byte_val))) {
-//            return; // bad byte, don't print it
-//        }
-//    }
-//    printf("%s", piece);
-//}
+
+    char* piece = t->vocab[token].data();
+    // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
+    if (prev_token == 1 && piece[0] == ' ') { piece++; }
+    // careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
+    // parse this and convert and return the actual byte
+    unsigned char byte_val;
+    if (sscanf(piece, "<0x%02hhX>", &byte_val) == 1) {
+        piece = (char*)t->byte_pieces + byte_val * 2;
+    }
+    return piece;
+}
+
+void safe_printf(char *piece) {
+    // piece might be a raw byte token, and we only want to print printable chars or whitespace
+    // because some of the other bytes can be various control codes, backspace, etc.
+    if (piece == NULL) { return; }
+    if (piece[0] == '\0') { return; }
+    if (piece[1] == '\0') {
+        unsigned char byte_val = piece[0];
+        if (!(isprint(byte_val) || isspace(byte_val))) {
+            return; // bad byte, don't print it
+        }
+    }
+    printf("%s", piece);
+}
 
 int str_lookup(char *str, const std::vector<TokenIndex>& sorted_vocab, int vocab_size) {
     // efficiently find the perfect match for str in vocab, return its index or -1 if not found
@@ -929,26 +940,26 @@ void generate(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *
         }
         pos++;
 
-//        // data-dependent terminating condition: the BOS (=1) token delimits sequences
-//        if (next == 1) { break; }
-//
-//        // print the token as string, decode it with the Tokenizer object
-//        char* piece = decode(tokenizer, token, next);
-//        safe_printf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
-//        fflush(stdout);
-//        token = next;
-//
-//        // init the timer here because the first iteration can be slower
-//        if (start == 0) { start = time_in_ms(); }
-    }
-//    printf("\n");
+        // data-dependent terminating condition: the BOS (=1) token delimits sequences
+        if (next == 1) { break; }
 
-//    // report achieved tok/s (pos-1 because the timer starts after first iteration)
-//    if (pos > 1) {
-//        long end = time_in_ms();
-//        fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
-//    }
-//
+        // print the token as string, decode it with the Tokenizer object
+        char* piece = decode(tokenizer, token, next);
+        safe_printf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
+        fflush(stdout);
+        token = next;
+
+        // init the timer here because the first iteration can be slower
+        if (start == 0) { start = time_in_ms(); }
+    }
+    printf("\n");
+
+    // report achieved tok/s (pos-1 because the timer starts after first iteration)
+    if (pos > 1) {
+        long end = time_in_ms();
+        fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
+    }
+
 //    free(prompt_tokens);
 }
 
