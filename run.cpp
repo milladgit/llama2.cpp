@@ -194,6 +194,7 @@ void rmsnorm(T* o, T* x, T* weight, int size) {
 
     // calculate sum of squares
     T ss = 0.0f;
+    #pragma omp parallel for private(j) reduction(+:ss)
     for (int j = 0; j < size; j++) {
         ss += x[j] * x[j];
     }
@@ -201,6 +202,7 @@ void rmsnorm(T* o, T* x, T* weight, int size) {
     ss += T(1e-5f);
     ss = T(1) / std::sqrt(ss);
     // normalize and scale
+    #pragma omp parallel for private(j)
     for (int j = 0; j < size; j++) {
         o[j] = weight[j] * (ss * x[j]);
     }
@@ -213,20 +215,22 @@ void softmax(T* x, int size) {
 
     // find max value (for numerical stability)
     T max_val = x[0];
+    #pragma omp parallel for private(i) reduction(max:max_val)
     for (int i = 1; i < size; i++) {
-        if (x[i] > max_val) {
-            max_val = x[i];
-        }
+        max_val = std::max(max_val, x[i]);
     }
     // exp and sum
     T sum = T(0);
+    #pragma omp parallel for private(i) reduction(+:sum)
     for (int i = 0; i < size; i++) {
         x[i] = std::exp(x[i] - max_val);
         sum += x[i];
     }
+    T sum_inv = T(1) / sum;
     // normalize
+    #pragma omp parallel for private(i)
     for (int i = 0; i < size; i++) {
-        x[i] /= sum;
+        x[i] *= sum_inv;
     }
 }
 
@@ -282,7 +286,7 @@ T* forward(Transformer<T>* transformer, int token, int pos) {
         // RoPE relative positional encoding: complex-valued rotate q and k in each head
         for (int i = 0; i < dim; i+=2) {
             int head_dim = i % head_size;
-            float freq = 1.0f / powf(10000.0f, head_dim / (float)head_size);
+            float freq = 1.0f / std::pow(10000.0f, head_dim / (float)head_size);
             float val = pos * freq;
             float fcr = cosf(val);
             float fci = sinf(val);
@@ -313,7 +317,7 @@ T* forward(Transformer<T>* transformer, int token, int pos) {
                 for (int i = 0; i < head_size; i++) {
                     score += q[i] * k[i];
                 }
-                score /= sqrtf(head_size);
+                score /= std::sqrt(head_size);
                 // save the score to the attention buffer
                 att[t] = score;
             }
