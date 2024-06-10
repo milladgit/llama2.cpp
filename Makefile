@@ -8,15 +8,20 @@ run: run.c
 	$(CC) -O3 -o run run.c -lm
 	$(CC) -O3 -o runq runq.c -lm
 
-runcpp: run.cpp
-#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
-	g++ -std=c++17 -O3 -I. -o run run.cpp -lm
-
 # useful for a debug build, can then e.g. analyze with valgrind, example:
 # $ valgrind --leak-check=full ./run out/model.bin -n 3
 rundebug: run.c
 	$(CC) -g -o run run.c -lm
 	$(CC) -g -o runq runq.c -lm
+
+
+runcppdebug: run.cpp
+	g++ -std=c++17 -g -I. -o run run.cpp -lm
+
+runcpp: run.cpp
+#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
+	g++ -std=c++17 -O3 -I. -o run run.cpp -lm
+
 
 # https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html
 # https://simonbyrne.github.io/notes/fastmath/

@@ -290,7 +290,7 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
     int i;
-    #pragma omp parallel for private(i)
+//    #pragma omp parallel for private(i)
     for (i = 0; i < d; i++) {
         float val = 0.0f;
         for (int j = 0; j < n; j++) {
@@ -300,17 +300,14 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
     }
 }
 
-#if 0
-#endif
-
 template <typename T>
-float* forward(Transformer<T>* transformer, int token, int pos) {
+T* forward(Transformer<T>* transformer, int token, int pos) {
 
     // a few convenience variables
     Config* p = &transformer->config;
     TransformerWeights* w = &transformer->weights;
     RunState<T>* s = &transformer->state;
-    float *x = s->x.data();
+    T *x = s->x.data();
     int dim = p->dim;
     int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
     int kv_mul = p->n_heads / p->n_kv_heads; // integer multiplier of the kv sharing in multiquery
@@ -354,92 +351,89 @@ float* forward(Transformer<T>* transformer, int token, int pos) {
             }
         }
 
-//        // multihead attention. iterate over all heads
-//        int h;
-//        #pragma omp parallel for private(h)
-//        for (h = 0; h < p->n_heads; h++) {
-//            // get the query vector for this head
-//            float* q = s->q + h * head_size;
-//            // attention scores for this head
-//            float* att = s->att + h * p->seq_len;
-//            // iterate over all timesteps, including the current one
-//            for (int t = 0; t <= pos; t++) {
-//                // get the key vector for this head and at this timestep
-//                float* k = s->key_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
-//                // calculate the attention score as the dot product of q and k
-//                float score = 0.0f;
-//                for (int i = 0; i < head_size; i++) {
-//                    score += q[i] * k[i];
-//                }
-//                score /= sqrtf(head_size);
-//                // save the score to the attention buffer
-//                att[t] = score;
-//            }
-//
-//            // softmax the scores to get attention weights, from 0..pos inclusively
-//            softmax(att, pos + 1);
-//
-//            // weighted sum of the values, store back into xb
-//            float* xb = s->xb + h * head_size;
-//            memset(xb, 0, head_size * sizeof(float));
-//            for (int t = 0; t <= pos; t++) {
-//                // get the value vector for this head and at this timestep
-//                float* v = s->value_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
-//                // get the attention weight for this timestep
-//                float a = att[t];
-//                // accumulate the weighted value into xb
-//                for (int i = 0; i < head_size; i++) {
-//                    xb[i] += a * v[i];
-//                }
-//            }
-//        }
-//
-//        // final matmul to get the output of the attention
-//        matmul(s->xb2, s->xb, w->wo + l*dim*dim, dim, dim);
-//
-//        // residual connection back into x
-//        for (int i = 0; i < dim; i++) {
-//            x[i] += s->xb2[i];
-//        }
-//
-//        // ffn rmsnorm
-//        rmsnorm(s->xb, x, w->rms_ffn_weight + l*dim, dim);
-//
-//        // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
-//        // first calculate self.w1(x) and self.w3(x)
-//        matmul(s->hb, s->xb, w->w1 + l*dim*hidden_dim, dim, hidden_dim);
-//        matmul(s->hb2, s->xb, w->w3 + l*dim*hidden_dim, dim, hidden_dim);
-//
-//        // SwiGLU non-linearity
-//        for (int i = 0; i < hidden_dim; i++) {
-//            float val = s->hb[i];
-//            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-//            val *= (1.0f / (1.0f + expf(-val)));
-//            // elementwise multiply with w3(x)
-//            val *= s->hb2[i];
-//            s->hb[i] = val;
-//        }
-//
-//        // final matmul to get the output of the ffn
-//        matmul(s->xb, s->hb, w->w2 + l*dim*hidden_dim, hidden_dim, dim);
-//
-//        // residual connection
-//        for (int i = 0; i < dim; i++) {
-//            x[i] += s->xb[i];
-//        }
-    }
+        // multihead attention. iterate over all heads
+        int h;
+        #pragma omp parallel for private(h)
+        for (h = 0; h < p->n_heads; h++) {
+            // get the query vector for this head
+            T* q = s->q.data() + h * head_size;
+            // attention scores for this head
+            T* att = s->att.data() + h * p->seq_len;
+            // iterate over all timesteps, including the current one
+            for (int t = 0; t <= pos; t++) {
+                // get the key vector for this head and at this timestep
+                T* k = s->key_cache.data() + loff + t * kv_dim + (h / kv_mul) * head_size;
+                // calculate the attention score as the dot product of q and k
+                T score = 0.0f;
+                for (int i = 0; i < head_size; i++) {
+                    score += q[i] * k[i];
+                }
+                score /= sqrtf(head_size);
+                // save the score to the attention buffer
+                att[t] = score;
+            }
 
-//    // final rmsnorm
-//    rmsnorm(x, x, w->rms_final_weight, dim);
-//
-//    // classifier into logits
-//    matmul(s->logits, x, w->wcls, p->dim, p->vocab_size);
+            // softmax the scores to get attention weights, from 0..pos inclusively
+            softmax(att, pos + 1);
+
+            // weighted sum of the values, store back into xb
+            T* xb = s->xb.data() + h * head_size;
+            memset(xb, 0, head_size * sizeof(T));
+            for (int t = 0; t <= pos; t++) {
+                // get the value vector for this head and at this timestep
+                const T* v =  s->value_cache.data() + loff + t * kv_dim + (h / kv_mul) * head_size;
+                // get the attention weight for this timestep
+                const T a = att[t];
+                // accumulate the weighted value into xb
+                for (int i = 0; i < head_size; i++) {
+                    xb[i] += a * v[i];
+                }
+            }
+        }
+
+        // final matmul to get the output of the attention
+        matmul(s->xb2.data(), s->xb.data(), w->wo + l*dim*dim, dim, dim);
+
+        // residual connection back into x
+        for (int i = 0; i < dim; i++) {
+            x[i] += s->xb2[i];
+        }
+
+        // ffn rmsnorm
+        rmsnorm(s->xb.data(), x, w->rms_ffn_weight + l*dim, dim);
+
+        // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
+        // first calculate self.w1(x) and self.w3(x)
+        matmul(s->hb.data(), s->xb.data(), w->w1 + l*dim*hidden_dim, dim, hidden_dim);
+        matmul(s->hb2.data(), s->xb.data(), w->w3 + l*dim*hidden_dim, dim, hidden_dim);
+
+        // SwiGLU non-linearity
+        for (int i = 0; i < hidden_dim; i++) {
+            T val = s->hb[i];
+            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
+            val *= (T) (1.0f / (1.0f + std::exp(-val)));
+            // elementwise multiply with w3(x)
+            val *= s->hb2[i];
+            s->hb[i] = val;
+        }
+
+        // final matmul to get the output of the ffn
+        matmul(s->xb.data(), s->hb.data(), w->w2 + l*dim*hidden_dim, hidden_dim, dim);
+
+        // residual connection
+        for (int i = 0; i < dim; i++) {
+            x[i] += s->xb[i];
+        }
+    }
+    // final rmsnorm
+    rmsnorm(x, x, w->rms_final_weight, dim);
+
+    // classifier into logits
+    matmul(s->logits.data(), x, w->wcls, p->dim, p->vocab_size);
+
     return s->logits.data();
 }
 
-#if 0
-
-#endif
 
 // ----------------------------------------------------------------------------
 // The Byte Pair Encoding (BPE) Tokenizer that translates strings <-> tokens
@@ -573,14 +567,7 @@ void encode(Tokenizer<T>* t, char *text, int8_t bos, int8_t eos, std::vector<int
         }
 
 //        qsort(t->sorted_vocab, t->vocab_size, sizeof(TokenIndex), compare_tokens);
-        constexpr bool USE_QSORT = false;
-        if constexpr(USE_QSORT) {
-            qsort(t->sorted_vocab.data(), t->sorted_vocab.size(), sizeof(TokenIndex), compare_tokens);
-        } else {
-            std::sort(t->sorted_vocab.begin(), t->sorted_vocab.end(), [](const TokenIndex& a, const TokenIndex& b) {
-                return strcmp(a.str, b.str) < 0;
-            });
-        }
+        qsort(t->sorted_vocab.data(), t->sorted_vocab.size(), sizeof(TokenIndex), compare_tokens);
     }
 
 
@@ -784,16 +771,7 @@ int sample_topp(T* probabilities, int n, T topp, ProbIndex* probindex, T coin) {
         }
     }
 //    qsort(probindex, n0, sizeof(ProbIndex), compare_prob_index);
-    constexpr bool USE_QSORT = false;
-    if constexpr(USE_QSORT) {
-        qsort(probindex, n0, sizeof(ProbIndex), compare_prob_index);
-    } else {
-        std::sort(probindex, probindex + n0, [](const ProbIndex& a, const ProbIndex& b) {
-            if (a.prob > b.prob) return -1;
-            else if (a.prob < b.prob) return 1;
-            else return 0;
-        });
-    }
+    qsort(probindex, n0, sizeof(ProbIndex), compare_prob_index);
 
     // truncate the list where cumulative probability exceeds topp
     T cumulative_prob = 0.0f;
@@ -876,8 +854,6 @@ int sample(Sampler<T>* sampler, T* logits) {
     return next;
 }
 
-#if 0
-#endif
 
 // ----------------------------------------------------------------------------
 // utilities: time
@@ -916,12 +892,6 @@ void generate(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *
 
         // forward the transformer to get logits for the next token
         float* logits = forward(transformer, token, pos);
-        {
-            static int i = 0;
-            if(i%100000 == 0)
-                std::cout << "    MILLAD:   preventing from being removed" << logits[i%1000] << std::endl;
-            i++;
-        }
 
         // advance the state machine
         if (pos < num_prompt_tokens - 1) {
@@ -930,13 +900,6 @@ void generate(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *
         } else {
             // otherwise sample the next token from the logits
             next = sample(sampler, logits);
-
-            {
-                static int i = 0;
-                if(i%100000 == 0)
-                    std::cout << "    MILLAD:   preventing sample from being removed" << next << std::endl;
-                i++;
-            }
         }
         pos++;
 

@@ -56,13 +56,6 @@ void rmsnorm(Tensor<float>& o, const Tensor<float>& x, const Tensor<float>& weig
         return ss.str();
     };
 
-    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__
-                << "    "
-            << print(o) << "   "
-            << print(x) << "   "
-            << print(weight) << "   "
-            << std::endl;
-
     // calculate sum of squares
     float ss = 0.0f;
     for (int j = 0; j < size; j++) {
@@ -91,13 +84,6 @@ void matmul(Tensor<float>& xout, const Tensor<float>& x, const Tensor<float>& w,
         ss << "]";
         return ss.str();
     };
-
-    std::cout << "    MILLAD:  " << __FILE__ << ":" << __LINE__
-              << "    "
-              << print(xout) << "   "
-              << print(x) << "   "
-              << print(w) << "   "
-              << std::endl;
 
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
