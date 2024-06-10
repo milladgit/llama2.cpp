@@ -14,43 +14,11 @@
     #include <sys/mman.h>
 #endif
 
+// C++ headers
 #include <vector>
 #include <iostream>
 #include <sstream>
 #include <cassert>
-
-#include <optional>    // For std::optional
-
-template <typename Iterator>
-class array_view {
-    std::optional<Iterator> begin_;
-    std::optional<Iterator> end_;
-public:
-    array_view() : begin_(std::nullopt), end_(std::nullopt) {}
-    array_view(Iterator begin, Iterator end) : begin_(begin), end_(end) {}
-    Iterator begin() const {
-        assert(begin_.has_value() && "Accessing begin of an uninitialized array_view");
-        return *begin_;
-    }
-    Iterator end() const {
-        assert(end_.has_value() && "Accessing end of an uninitialized array_view");
-        return *end_;
-    }
-    size_t size() {
-        assert(begin_.has_value() && end_.has_value() && "Calculating size of an uninitialized array_view");
-        return *end_ - *begin_;
-    }
-
-    typename std::iterator_traits<Iterator>::reference
-    operator[](std::size_t index) {
-        assert(begin_.has_value() && "Accessing element of an uninitialized array_view");
-        assert(index >= 0 && "Index is out of range (less than zero)");
-        assert(index < size() && "Index is out of range (more than size)");
-        return (*begin_)[index];
-    }
-};
-
-#define MAKE_AV_VECTOR(T) array_view<std::vector<T>::iterator>
 
 
 // ----------------------------------------------------------------------------
@@ -67,6 +35,7 @@ typedef struct {
 } Config;
 
 /// This struct is loaded from the file!
+/// As a result, we keep the pointers and we will not promote them to use STD types.
 typedef struct {
     // token embedding table
     float* token_embedding_table;    // (vocab_size, dim)
@@ -91,21 +60,6 @@ typedef struct {
 /// This struct is allocated!
 template <typename T>
 struct RunState {
-//    // current wave of activations
-//    float *x; // activation at current time stamp (dim,)
-//    float *xb; // same, but inside a residual branch (dim,)
-//    float *xb2; // an additional buffer just for convenience (dim,)
-//    float *hb; // buffer for hidden dimension in the ffn (hidden_dim,)
-//    float *hb2; // buffer for hidden dimension in the ffn (hidden_dim,)
-//    float *q; // query (dim,)
-//    float *k; // key (dim,)
-//    float *v; // value (dim,)
-//    float *att; // buffer for scores/attention values (n_heads, seq_len)
-//    float *logits; // output logits
-//    // kv cache
-//    float* key_cache;   // (layer, seq_len, dim)
-//    float* value_cache; // (layer, seq_len, dim)
-
     // current wave of activations
     std::vector<T> x; // activation at current time stamp (dim,)
     std::vector<T> xb; // same, but inside a residual branch (dim,)
@@ -113,17 +67,17 @@ struct RunState {
     std::vector<T> hb; // buffer for hidden dimension in the ffn (hidden_dim,)
     std::vector<T> hb2; // buffer for hidden dimension in the ffn (hidden_dim,)
     std::vector<T> q; // query (dim,)
-//    std::vector<T> k; // key (dim,)
-//    std::vector<T> v; // value (dim,)
-    T* k;
-    T* v;
+    // The followings (k, v) are only used for pointer arithmetic operations.
+    // No real data are allocated for them.
+    T* k; // key   ---> upper bound for shape: (dim,)
+    T* v; // value ---> upper bound for shape: (dim,)
     std::vector<T> att; // buffer for scores/attention values (n_heads, seq_len)
     std::vector<T> logits; // output logits
     // kv cache
     std::vector<T> key_cache;   // (layer, seq_len, dim)
     std::vector<T> value_cache; // (layer, seq_len, dim)
 
-    RunState() {}
+    RunState() = default;
 
     void allocate(int dim, int hidden_dim, int cache_size, int att_size, int logits_size) {
         x.resize(dim, 0);
@@ -153,28 +107,12 @@ struct Transformer {
 
 template<typename T>
 void malloc_run_state(RunState<T>* s, Config* p) {
-    // we calloc instead of malloc to keep valgrind happy
     int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
-
     s->allocate(p->dim,
                 p->hidden_dim,
                 p->n_layers * p->seq_len * kv_dim,
                 p->n_heads * p->seq_len,
                 p->vocab_size);
-}
-
-template<typename T>
-void free_run_state(RunState<T>* s) {
-//    free(s->x);
-//    free(s->xb);
-//    free(s->xb2);
-//    free(s->hb);
-//    free(s->hb2);
-//    free(s->q);
-//    free(s->att);
-//    free(s->logits);
-//    free(s->key_cache);
-//    free(s->value_cache);
 }
 
 void memory_map_weights(TransformerWeights *w, Config* p, float* ptr, int shared_weights) {
@@ -243,8 +181,6 @@ void free_transformer(Transformer<T>* t) {
     // close the memory mapping
     if (t->data != MAP_FAILED) { munmap(t->data, t->file_size); }
     if (t->fd != -1) { close(t->fd); }
-    // free the RunState buffers
-    free_run_state(&t->state);
 }
 
 
@@ -291,7 +227,7 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
     int i;
-//    #pragma omp parallel for private(i)
+    #pragma omp parallel for private(i)
     for (i = 0; i < d; i++) {
         float val = 0.0f;
         for (int j = 0; j < n; j++) {
@@ -440,15 +376,14 @@ T* forward(Transformer<T>* transformer, int token, int pos) {
 // The Byte Pair Encoding (BPE) Tokenizer that translates strings <-> tokens
 
 struct TokenIndex {
+    // Kept as pointer because it is used to pass strings!
+    // More efficient to use it as it is!
     char *str;
     int id;
 };
 
 template <typename T>
 struct Tokenizer {
-//    char** vocab;
-//    float* vocab_scores;
-//    TokenIndex *sorted_vocab;
     std::vector<std::vector<char>> vocab;
     std::vector<T> vocab_scores;
     std::vector<TokenIndex> sorted_vocab;
@@ -456,7 +391,7 @@ struct Tokenizer {
     unsigned int max_token_length;
     unsigned char byte_pieces[512]; // stores all single-byte strings
 
-    Tokenizer() {}
+    Tokenizer() = default;
 };
 
 int compare_tokens(const void *a, const void *b) {
@@ -464,16 +399,13 @@ int compare_tokens(const void *a, const void *b) {
 }
 
 template <typename T>
-void build_tokenizer(Tokenizer<T>* t, char* tokenizer_path, int vocab_size) {
+void build_tokenizer(Tokenizer<T>* t, const char* tokenizer_path, int vocab_size) {
     // i should have written the vocab_size into the tokenizer file... sigh
     t->vocab_size = vocab_size;
     // malloc space to hold the scores and the strings
-//    t->vocab = (char**)malloc(vocab_size * sizeof(char*));
-//    t->vocab_scores = (float*)malloc(vocab_size * sizeof(float));
     t->vocab.resize(vocab_size);
     t->vocab_scores.resize(vocab_size);
 
-//    t->sorted_vocab = NULL; // initialized lazily
     for (int i = 0; i < 256; i++) {
         t->byte_pieces[i * 2] = (unsigned char)i;
         t->byte_pieces[i * 2 + 1] = '\0';
@@ -486,7 +418,6 @@ void build_tokenizer(Tokenizer<T>* t, char* tokenizer_path, int vocab_size) {
     for (int i = 0; i < vocab_size; i++) {
         if (fread(&t->vocab_scores[i], sizeof(float), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE);}
         if (fread(&len, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
-//        t->vocab[i] = (char *)malloc(len + 1);
         t->vocab[i].resize(len + 1);
         if (fread(t->vocab[i].data(), len, 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
         t->vocab[i][len] = '\0'; // add the string terminating token
@@ -495,26 +426,7 @@ void build_tokenizer(Tokenizer<T>* t, char* tokenizer_path, int vocab_size) {
 }
 
 template <typename T>
-void free_tokenizer(Tokenizer<T>* t) {
-//    for (int i = 0; i < t->vocab_size; i++) { free(t->vocab[i]); }
-//    free(t->vocab);
-//    free(t->vocab_scores);
-//    free(t->sorted_vocab);
-}
-
-template <typename T>
 char* decode(Tokenizer<T>* t, int prev_token, int token) {
-//    char *piece = t->vocab[token];
-//    // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
-//    if (prev_token == 1 && piece[0] == ' ') { piece++; }
-//    // careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
-//    // parse this and convert and return the actual byte
-//    unsigned char byte_val;
-//    if (sscanf(piece, "<0x%02hhX>", &byte_val) == 1) {
-//        piece = (char*)t->byte_pieces + byte_val * 2;
-//    }
-//    return piece;
-
     char* piece = t->vocab[token].data();
     // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
     if (prev_token == 1 && piece[0] == ' ') { piece++; }
@@ -544,20 +456,21 @@ void safe_printf(char *piece) {
 int str_lookup(char *str, const std::vector<TokenIndex>& sorted_vocab, int vocab_size) {
     // efficiently find the perfect match for str in vocab, return its index or -1 if not found
     TokenIndex tok = { .str = str }; // acts as the key to search for
-    auto res = (TokenIndex *) bsearch(&tok, (void*)sorted_vocab.data(), vocab_size, sizeof(TokenIndex), compare_tokens);
-    return res != NULL ? res->id : -1;
+    auto res = (TokenIndex *) bsearch(&tok,
+                                      (void*)sorted_vocab.data(),
+                                      vocab_size,
+                                      sizeof(TokenIndex),
+                                      compare_tokens);
+    return res != nullptr ? res->id : -1;
 }
 
 template <typename T>
 void encode(Tokenizer<T>* t, const char *text, int8_t bos, int8_t eos, std::vector<int>& tokens, int *n_tokens) {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    if (text == NULL) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
+    if (text == nullptr) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
 
-//    if (t->sorted_vocab == NULL) {
     if (t->sorted_vocab.empty()) {
-        // lazily malloc and sort the vocabulary
-//        t->sorted_vocab = malloc(t->vocab_size * sizeof(TokenIndex));
         t->sorted_vocab.resize(t->vocab_size);
         for (int i = 0; i < t->vocab_size; i++) {
             assert(t->vocab[i].size() > 0);
@@ -567,15 +480,11 @@ void encode(Tokenizer<T>* t, const char *text, int8_t bos, int8_t eos, std::vect
             assert(t->sorted_vocab[i].str != nullptr);
         }
 
-//        qsort(t->sorted_vocab, t->vocab_size, sizeof(TokenIndex), compare_tokens);
         qsort(t->sorted_vocab.data(), t->sorted_vocab.size(), sizeof(TokenIndex), compare_tokens);
     }
 
-
-
     // create a temporary buffer that will store merge candidates of always two consecutive tokens
     // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
-//    char* str_buffer = malloc((t->max_token_length*2 +1 +2) * sizeof(char));
     std::vector<char> str_buffer(t->max_token_length*2 +1 +2);
     size_t str_len = 0;
 
@@ -590,7 +499,7 @@ void encode(Tokenizer<T>* t, const char *text, int8_t bos, int8_t eos, std::vect
     // TODO: pretty sure this isn't correct in the general case but I don't have the
     // energy to read more of the sentencepiece code to figure out what it's doing
     if (text[0] != '\0') {
-        int dummy_prefix = str_lookup(" ", t->sorted_vocab, t->vocab_size);
+        int dummy_prefix = str_lookup((char*)" ", t->sorted_vocab, t->vocab_size);
         tokens[(*n_tokens)++] = dummy_prefix;
     }
 
@@ -644,13 +553,15 @@ void encode(Tokenizer<T>* t, const char *text, int8_t bos, int8_t eos, std::vect
     }
 
     // merge the best consecutive pair each iteration, according the scores in vocab_scores
-    while (1) {
+    while (true) {
         float best_score = -1e10;
         int best_id = -1;
         int best_idx = -1;
 
         for (int i=0; i < (*n_tokens-1); i++) {
             // check if we can merge the pair (tokens[i], tokens[i+1])
+            // TODO: Use string_stream;
+            // BUT, I think this might even be more efficient as we do no need to reallocated multiple times!
             sprintf(str_buffer.data(), "%s%s", t->vocab[tokens[i]].data(), t->vocab[tokens[i+1]].data());
             int id = str_lookup(str_buffer.data(), t->sorted_vocab, t->vocab_size);
             if (id != -1 && t->vocab_scores[id] > best_score) {
@@ -676,8 +587,6 @@ void encode(Tokenizer<T>* t, const char *text, int8_t bos, int8_t eos, std::vect
 
     // add optional EOS (=2) token, if desired
     if (eos) tokens[(*n_tokens)++] = 2;
-
-//    free(str_buffer);
 }
 
 
@@ -697,13 +606,12 @@ struct Sampler {
     static_assert(std::is_same_v<T, float>);
 
     int vocab_size;
-//    ProbIndex* probindex; // buffer used in top-p sampling
     std::vector<ProbIndex> probindex; // buffer used in top-p sampling
     T temperature;
     T topp;
     unsigned long long rng_state;
 
-    Sampler() {}
+    Sampler() = default;
 
     void allocate(int vocab_size, T temperature, T topp, unsigned long long rng_seed) {
         this->vocab_size = vocab_size;
@@ -719,15 +627,6 @@ template <typename T>
 int sample_argmax(T* probabilities, int n) {
     // return the index that has the highest probability
     return std::max_element(probabilities, probabilities + n) - probabilities;
-//    int max_i = 0;
-//    T max_p = probabilities[0];
-//    for (int i = 1; i < n; i++) {
-//        if (probabilities[i] > max_p) {
-//            max_i = i;
-//            max_p = probabilities[i];
-//        }
-//    }
-//    return max_i;
 }
 
 template <typename T>
@@ -771,7 +670,6 @@ int sample_topp(T* probabilities, int n, T topp, ProbIndex* probindex, T coin) {
             n0++;
         }
     }
-//    qsort(probindex, n0, sizeof(ProbIndex), compare_prob_index);
     qsort(probindex, n0, sizeof(ProbIndex), compare_prob_index);
 
     // truncate the list where cumulative probability exceeds topp
@@ -799,19 +697,7 @@ int sample_topp(T* probabilities, int n, T topp, ProbIndex* probindex, T coin) {
 
 template<typename T>
 void build_sampler(Sampler<T>* sampler, int vocab_size, T temperature, T topp, unsigned long long rng_seed) {
-//    sampler->vocab_size = vocab_size;
-//    sampler->temperature = temperature;
-//    sampler->topp = topp;
-//    sampler->rng_state = rng_seed;
-//    // buffer only used with nucleus sampling; may not need but it's ~small
-//    sampler->probindex = malloc(sampler->vocab_size * sizeof(ProbIndex));
-
     sampler->allocate(vocab_size, temperature, topp, rng_seed);
-}
-
-template<typename T>
-void free_sampler(Sampler<T>* sampler) {
-//    free(sampler->probindex);
 }
 
 
@@ -849,7 +735,11 @@ int sample(Sampler<T>* sampler, T* logits) {
             next = sample_mult(logits, sampler->vocab_size, coin);
         } else {
             // top-p (nucleus) sampling, clamping the least likely tokens to zero
-            next = sample_topp(logits, sampler->vocab_size, sampler->topp, sampler->probindex.data(), coin);
+            next = sample_topp(logits,
+                               sampler->vocab_size,
+                               sampler->topp,
+                               sampler->probindex.data(),
+                               coin);
         }
     }
     return next;
@@ -870,13 +760,10 @@ long time_in_ms() {
 // generation loop
 
 template <typename T>
-void generate(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *sampler, char *prompt, int steps) {
-    char *empty_prompt = "";
-    if (prompt == NULL) { prompt = empty_prompt; }
+void generate(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *sampler, const char *prompt, int steps) {
 
     // encode the (string) prompt into tokens sequence
     int num_prompt_tokens = 0;
-//    int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
     std::vector<int> prompt_tokens((strlen(prompt)+3) ); // +3 for '\0', ?BOS, ?EOS
     encode(tokenizer, prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
     if (num_prompt_tokens < 1) {
@@ -923,8 +810,6 @@ void generate(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *
         long end = time_in_ms();
         fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
     }
-
-//    free(prompt_tokens);
 }
 
 void read_stdin(const char* guide, char* buffer, size_t bufsize) {
@@ -946,18 +831,15 @@ void read_stdin(const char* guide, char* buffer, size_t bufsize) {
 // is not safely implemented, it's more a proof of concept atm.
 template<typename T>
 void chat(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *sampler,
-          char *cli_user_prompt, char *cli_system_prompt, int steps) {
+          const char *cli_user_prompt, const char *cli_system_prompt, int steps) {
 
     // buffers for reading the system prompt and user prompt from stdin
     // you'll notice they are soomewhat haphazardly and unsafely set atm
-//    char system_prompt[512];
-//    char user_prompt[512];
     std::array<char, 512> system_prompt;
     std::array<char, 512> user_prompt;
-//    char rendered_prompt[1152];
     std::stringstream rendered_prompt;
     int num_prompt_tokens = 0;
-//    int* prompt_tokens = (int*)malloc(1152 * sizeof(int));
+    // Seems like `1152` is arbitrary! So, we can change it if we want!
     std::vector<int> prompt_tokens(1152);
     int user_idx;
 
@@ -973,16 +855,18 @@ void chat(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *samp
             // get the (optional) system prompt at position 0
             if (pos == 0) {
                 // at position 0, the user can also contribute a system prompt
-                if (cli_system_prompt == NULL) {
+                if (cli_system_prompt == nullptr) {
                     // system prompt was not passed in, attempt to get it from stdin
-                    read_stdin("Enter system prompt (optional): ", system_prompt.data(), system_prompt.size());
+                    read_stdin("Enter system prompt (optional): ",
+                               system_prompt.data(),
+                               system_prompt.size());
                 } else {
                     // system prompt was passed in, use it
                     strcpy(system_prompt.data(), cli_system_prompt);
                 }
             }
             // get the user prompt
-            if (pos == 0 && cli_user_prompt != NULL) {
+            if (pos == 0 && cli_user_prompt != nullptr) {
                 // user prompt for position 0 was passed in, use it
                 strcpy(user_prompt.data(), cli_user_prompt);
             } else {
@@ -991,15 +875,9 @@ void chat(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *samp
             }
             // render user/system prompts into the Llama 2 Chat schema
             if (pos == 0 && system_prompt[0] != '\0') {
-//                char system_template[] = "[INST] <<SYS>>\n%s\n<</SYS>>\n\n%s [/INST]";
-//                sprintf(rendered_prompt, system_template, system_prompt, user_prompt);
-
                 // TODO: We can use https://github.com/fmtlib/fmt
                 rendered_prompt << "[INST] <<SYS>>\n" << system_prompt.data() << "\n<</SYS>>\n\n" << user_prompt.data() << " [/INST]";
             } else {
-//                char user_template[] = "[INST] %s [/INST]";
-//                sprintf(rendered_prompt, user_template, user_prompt);
-
                 // TODO: We can use https://github.com/fmtlib/fmt
                 rendered_prompt << "[INST] " << user_prompt.data() << " [/INST]";
             }
@@ -1036,7 +914,6 @@ void chat(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *samp
         if (next == 2) { printf("\n"); }
     }
     printf("\n");
-//    free(prompt_tokens);
 }
 
 
@@ -1062,15 +939,15 @@ void error_usage() {
 int main(int argc, char *argv[]) {
 
     // default parameters
-    char *checkpoint_path = NULL;  // e.g. out/model.bin
-    char *tokenizer_path = "tokenizer.bin";
+    char *checkpoint_path = nullptr;  // e.g. out/model.bin
+    const char *tokenizer_path = "tokenizer.bin";
     float temperature = 1.0f;   // 0.0 = greedy deterministic. 1.0 = original. don't set higher
     float topp = 0.9f;          // top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
     int steps = 256;            // number of steps to run for
-    char *prompt = NULL;        // prompt string
+    const char *prompt = nullptr;        // prompt string
     unsigned long long rng_seed = 0; // seed rng with time by default
-    char *mode = "generate";    // generate|chat
-    char *system_prompt = NULL; // the (optional) system prompt to use in chat mode
+    const char *mode = "generate";    // generate|chat
+    char *system_prompt = nullptr; // the (optional) system prompt to use in chat mode
 
     // poor man's C argparse so we can override the defaults above from the command line
     if (argc >= 2) { checkpoint_path = argv[1]; } else { error_usage(); }
@@ -1090,6 +967,7 @@ int main(int argc, char *argv[]) {
         else if (argv[i][1] == 'y') { system_prompt = argv[i + 1]; }
         else { error_usage(); }
     }
+    if(prompt == nullptr) { prompt = ""; }
 
     // parameter validation/overrides
     if (rng_seed <= 0) rng_seed = (unsigned int)time(NULL);
@@ -1114,18 +992,25 @@ int main(int argc, char *argv[]) {
 
     // run!
     if (strcmp(mode, "generate") == 0) {
-        generate(&transformer, &tokenizer, &sampler, prompt, steps);
+        generate(&transformer,
+                 &tokenizer,
+                 &sampler,
+                 prompt,
+                 steps);
     } else if (strcmp(mode, "chat") == 0) {
-        chat(&transformer, &tokenizer, &sampler, prompt, system_prompt, steps);
+        chat(&transformer,
+             &tokenizer,
+             &sampler,
+             prompt,
+             system_prompt,
+             steps);
     } else {
         fprintf(stderr, "unknown mode: %s\n", mode);
         error_usage();
     }
 
-//    // memory and file handles cleanup
-//    free_sampler(&sampler);
-//    free_tokenizer(&tokenizer);
-//    free_transformer(&transformer);
+    // file handles cleanup
+    free_transformer(&transformer);
     return 0;
 }
 #endif
