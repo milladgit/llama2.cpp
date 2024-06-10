@@ -24,7 +24,7 @@
 // ----------------------------------------------------------------------------
 // Transformer model
 
-typedef struct {
+struct Config {
     int dim; // transformer dimension
     int hidden_dim; // for ffn layers
     int n_layers; // number of layers
@@ -32,30 +32,32 @@ typedef struct {
     int n_kv_heads; // number of key/value heads (can be < query heads because of multiquery)
     int vocab_size; // vocabulary size, usually 256 (byte-level)
     int seq_len; // max sequence length
-} Config;
+};
 
 /// This struct is loaded from the file!
 /// As a result, we keep the pointers and we will not promote them to use STD types.
-typedef struct {
+/// The data type used in this structure is mandated by the file as they are loaded from the file.
+template <typename T = float>
+struct TransformerWeights {
     // token embedding table
-    float* token_embedding_table;    // (vocab_size, dim)
+    T* token_embedding_table;    // (vocab_size, dim)
     // weights for rmsnorms
-    float* rms_att_weight; // (layer, dim) rmsnorm weights
-    float* rms_ffn_weight; // (layer, dim)
+    T* rms_att_weight; // (layer, dim) rmsnorm weights
+    T* rms_ffn_weight; // (layer, dim)
     // weights for matmuls. note dim == n_heads * head_size
-    float* wq; // (layer, dim, n_heads * head_size)
-    float* wk; // (layer, dim, n_kv_heads * head_size)
-    float* wv; // (layer, dim, n_kv_heads * head_size)
-    float* wo; // (layer, n_heads * head_size, dim)
+    T* wq; // (layer, dim, n_heads * head_size)
+    T* wk; // (layer, dim, n_kv_heads * head_size)
+    T* wv; // (layer, dim, n_kv_heads * head_size)
+    T* wo; // (layer, n_heads * head_size, dim)
     // weights for ffn
-    float* w1; // (layer, hidden_dim, dim)
-    float* w2; // (layer, dim, hidden_dim)
-    float* w3; // (layer, hidden_dim, dim)
+    T* w1; // (layer, hidden_dim, dim)
+    T* w2; // (layer, dim, hidden_dim)
+    T* w3; // (layer, hidden_dim, dim)
     // final rmsnorm
-    float* rms_final_weight; // (dim,)
+    T* rms_final_weight; // (dim,)
     // (optional) classifier weights for the logits, on the last layer
-    float* wcls;
-} TransformerWeights;
+    T* wcls;
+};
 
 /// This struct is allocated!
 template <typename T>
@@ -97,7 +99,7 @@ struct RunState {
 template <typename T>
 struct Transformer {
     Config config; // the hyperparameters of the architecture (the blueprint)
-    TransformerWeights weights; // the weights of the model
+    TransformerWeights<T> weights; // the weights of the model
     RunState<T> state; // buffers for the "wave" of activations in the forward pass
     // some more state needed to properly clean up the memory mapping (sigh)
     int fd; // file descriptor for memory mapping
@@ -115,7 +117,13 @@ void malloc_run_state(RunState<T>* s, Config* p) {
                 p->vocab_size);
 }
 
-void memory_map_weights(TransformerWeights *w, Config* p, float* ptr, int shared_weights) {
+template<typename T>
+void memory_map_weights(TransformerWeights<T> *w, Config* p, float* ptr, int shared_weights) {
+    static_assert(std::is_same_v<T, float>);
+
+    // at the moment, the file is loaded with `float` values in them!
+    static_assert(std::is_same_v<std::remove_pointer_t<decltype(ptr)>, float>);
+
     int head_size = p->dim / p->n_heads;
     // make sure the multiplications below are done in 64bit to fit the parameter counts of 13B+ models
     unsigned long long n_layers = p->n_layers;
@@ -146,8 +154,9 @@ void memory_map_weights(TransformerWeights *w, Config* p, float* ptr, int shared
     w->wcls = shared_weights ? w->token_embedding_table : ptr;
 }
 
-void read_checkpoint(char* checkpoint, Config* config, TransformerWeights* weights,
-                     int* fd, float** data, ssize_t* file_size) {
+template<typename T>
+void read_checkpoint(char* checkpoint, Config* config, TransformerWeights<T>* weights,
+                     int* fd, T** data, ssize_t* file_size) {
     FILE *file = fopen(checkpoint, "rb");
     if (!file) { fprintf(stderr, "Couldn't open file %s\n", checkpoint); exit(EXIT_FAILURE); }
     // read in the config header
@@ -162,16 +171,21 @@ void read_checkpoint(char* checkpoint, Config* config, TransformerWeights* weigh
     // memory map the Transformer weights into the data pointer
     *fd = open(checkpoint, O_RDONLY); // open in read only mode
     if (*fd == -1) { fprintf(stderr, "open failed!\n"); exit(EXIT_FAILURE); }
-    *data = (float*)mmap(NULL, *file_size, PROT_READ, MAP_PRIVATE, *fd, 0);
+    *data = (T*)mmap(NULL, *file_size, PROT_READ, MAP_PRIVATE, *fd, 0);
     if (*data == MAP_FAILED) { fprintf(stderr, "mmap failed!\n"); exit(EXIT_FAILURE); }
-    float* weights_ptr = *data + sizeof(Config)/sizeof(float);
+    T* weights_ptr = *data + sizeof(Config)/sizeof(T);
     memory_map_weights(weights, config, weights_ptr, shared_weights);
 }
 
 template <typename T>
 void build_transformer(Transformer<T> *t, char* checkpoint_path) {
     // read in the Config and the Weights from the checkpoint
-    read_checkpoint(checkpoint_path, &t->config, &t->weights, &t->fd, &t->data, &t->file_size);
+    read_checkpoint(checkpoint_path,
+                    &t->config,
+                    &t->weights,
+                    &t->fd,
+                    &t->data,
+                    &t->file_size);
     // allocate the RunState buffers
     malloc_run_state(&t->state, &t->config);
 }
@@ -193,7 +207,7 @@ void rmsnorm(T* o, T* x, T* weight, int size) {
     static_assert(std::is_same_v<T, float>);
 
     // calculate sum of squares
-    T ss = 0.0f;
+    T ss = T(0);
     #pragma omp parallel for private(j) reduction(+:ss)
     for (int j = 0; j < size; j++) {
         ss += x[j] * x[j];
@@ -249,12 +263,14 @@ void matmul(T* xout, T* x, T* w, int n, int d) {
     }
 }
 
-template <typename T>
+// INTERMEDIATE_TYPE refers to the type that we usually use to store intermediate values in it.
+// It is useful in cases where we are dealing with fp16 precision values.
+template <typename T, typename INTERMEDIATE_TYPE = float>
 T* forward(Transformer<T>* transformer, int token, int pos) {
 
     // a few convenience variables
     Config* p = &transformer->config;
-    TransformerWeights* w = &transformer->weights;
+    TransformerWeights<T>* w = &transformer->weights;
     RunState<T>* s = &transformer->state;
     T *x = s->x.data();
     int dim = p->dim;
@@ -264,8 +280,8 @@ T* forward(Transformer<T>* transformer, int token, int pos) {
     int head_size = dim / p->n_heads;
 
     // copy the token embedding into x
-    float* content_row = w->token_embedding_table + token * dim;
-    memcpy(x, content_row, dim*sizeof(*x));
+    T* content_row = w->token_embedding_table + token * dim;
+    memcpy(x, content_row, dim*sizeof(T));
 
     // forward all the layers
     for(unsigned long long l = 0; l < p->n_layers; l++) {
@@ -274,7 +290,7 @@ T* forward(Transformer<T>* transformer, int token, int pos) {
         rmsnorm(s->xb.data(), x, w->rms_att_weight + l*dim, dim);
 
         // key and value point to the kv cache
-        int loff = l * p->seq_len * kv_dim; // kv cache layer offset for convenience
+        const int loff = l * p->seq_len * kv_dim; // kv cache layer offset for convenience
         s->k = s->key_cache.data() + loff + pos * kv_dim;
         s->v = s->value_cache.data() + loff + pos * kv_dim;
 
@@ -285,16 +301,16 @@ T* forward(Transformer<T>* transformer, int token, int pos) {
 
         // RoPE relative positional encoding: complex-valued rotate q and k in each head
         for (int i = 0; i < dim; i+=2) {
-            int head_dim = i % head_size;
-            float freq = 1.0f / std::pow(10000.0f, head_dim / (float)head_size);
-            float val = pos * freq;
-            float fcr = cosf(val);
-            float fci = sinf(val);
+            const int head_dim = i % head_size;
+            const INTERMEDIATE_TYPE freq = INTERMEDIATE_TYPE(1) / std::pow(INTERMEDIATE_TYPE(10000), head_dim / (INTERMEDIATE_TYPE)head_size);
+            const INTERMEDIATE_TYPE val = pos * freq;
+            const INTERMEDIATE_TYPE fcr = cosf(val);
+            const INTERMEDIATE_TYPE fci = sinf(val);
             int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
             for (int v = 0; v < rotn; v++) {
-                float* vec = v == 0 ? s->q.data() : s->k; // the vector to rotate (query or key)
-                float v0 = vec[i];
-                float v1 = vec[i+1];
+                T* vec = v == 0 ? s->q.data() : s->k; // the vector to rotate (query or key)
+                const T v0 = vec[i];
+                const T v1 = vec[i+1];
                 vec[i]   = v0 * fcr - v1 * fci;
                 vec[i+1] = v0 * fci + v1 * fcr;
             }
