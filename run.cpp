@@ -16,6 +16,7 @@
 
 #include <vector>
 #include <iostream>
+#include <sstream>
 #include <cassert>
 
 #include <optional>    // For std::optional
@@ -548,7 +549,7 @@ int str_lookup(char *str, const std::vector<TokenIndex>& sorted_vocab, int vocab
 }
 
 template <typename T>
-void encode(Tokenizer<T>* t, char *text, int8_t bos, int8_t eos, std::vector<int>& tokens, int *n_tokens) {
+void encode(Tokenizer<T>* t, const char *text, int8_t bos, int8_t eos, std::vector<int>& tokens, int *n_tokens) {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     if (text == NULL) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
@@ -602,7 +603,7 @@ void encode(Tokenizer<T>* t, char *text, int8_t bos, int8_t eos, std::vector<int
     // U+10000	U+10FFFF    11110xxx	10xxxxxx	10xxxxxx	10xxxxxx
 
     // process the raw (UTF-8) byte sequence of the input string
-    for (char *c = text; *c != '\0'; c++) {
+    for (const char *c = text; *c != '\0'; c++) {
 
         // reset buffer if the current byte is ASCII or a leading byte
         // 0xC0 is 11000000, so (*c & 0xC0) keeps the first 2 bits and zeros the rest
@@ -937,31 +938,33 @@ void read_stdin(const char* guide, char* buffer, size_t bufsize) {
     }
 }
 
-#if 0
 
 // ----------------------------------------------------------------------------
 // chat loop
 // I manually inspected the tokens for a few chat conversations compared to
 // python reference and that seemed ok, but this was not thoroughly tested and
 // is not safely implemented, it's more a proof of concept atm.
-
-void chat(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
+template<typename T>
+void chat(Transformer<T> *transformer, Tokenizer<T> *tokenizer, Sampler<T> *sampler,
           char *cli_user_prompt, char *cli_system_prompt, int steps) {
 
     // buffers for reading the system prompt and user prompt from stdin
     // you'll notice they are soomewhat haphazardly and unsafely set atm
-    char system_prompt[512];
-    char user_prompt[512];
-    char rendered_prompt[1152];
+//    char system_prompt[512];
+//    char user_prompt[512];
+    std::array<char, 512> system_prompt;
+    std::array<char, 512> user_prompt;
+//    char rendered_prompt[1152];
+    std::stringstream rendered_prompt;
     int num_prompt_tokens = 0;
-    int* prompt_tokens = (int*)malloc(1152 * sizeof(int));
+//    int* prompt_tokens = (int*)malloc(1152 * sizeof(int));
+    std::vector<int> prompt_tokens(1152);
     int user_idx;
 
     // start the main loop
     int8_t user_turn = 1; // user starts
     int next;        // will store the next token in the sequence
     int token;       // stores the current token to feed into the transformer
-    int prev_token;
     int pos = 0;     // position in the sequence
     while (pos < steps) {
 
@@ -972,30 +975,37 @@ void chat(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
                 // at position 0, the user can also contribute a system prompt
                 if (cli_system_prompt == NULL) {
                     // system prompt was not passed in, attempt to get it from stdin
-                    read_stdin("Enter system prompt (optional): ", system_prompt, sizeof(system_prompt));
+                    read_stdin("Enter system prompt (optional): ", system_prompt.data(), system_prompt.size());
                 } else {
                     // system prompt was passed in, use it
-                    strcpy(system_prompt, cli_system_prompt);
+                    strcpy(system_prompt.data(), cli_system_prompt);
                 }
             }
             // get the user prompt
             if (pos == 0 && cli_user_prompt != NULL) {
                 // user prompt for position 0 was passed in, use it
-                strcpy(user_prompt, cli_user_prompt);
+                strcpy(user_prompt.data(), cli_user_prompt);
             } else {
                 // otherwise get user prompt from stdin
-                read_stdin("User: ", user_prompt, sizeof(user_prompt));
+                read_stdin("User: ", user_prompt.data(), user_prompt.size());
             }
             // render user/system prompts into the Llama 2 Chat schema
             if (pos == 0 && system_prompt[0] != '\0') {
-                char system_template[] = "[INST] <<SYS>>\n%s\n<</SYS>>\n\n%s [/INST]";
-                sprintf(rendered_prompt, system_template, system_prompt, user_prompt);
+//                char system_template[] = "[INST] <<SYS>>\n%s\n<</SYS>>\n\n%s [/INST]";
+//                sprintf(rendered_prompt, system_template, system_prompt, user_prompt);
+
+                // TODO: We can use https://github.com/fmtlib/fmt
+                rendered_prompt << "[INST] <<SYS>>\n" << system_prompt.data() << "\n<</SYS>>\n\n" << user_prompt.data() << " [/INST]";
             } else {
-                char user_template[] = "[INST] %s [/INST]";
-                sprintf(rendered_prompt, user_template, user_prompt);
+//                char user_template[] = "[INST] %s [/INST]";
+//                sprintf(rendered_prompt, user_template, user_prompt);
+
+                // TODO: We can use https://github.com/fmtlib/fmt
+                rendered_prompt << "[INST] " << user_prompt.data() << " [/INST]";
             }
+
             // encode the rendered prompt into tokens
-            encode(tokenizer, rendered_prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
+            encode(tokenizer, rendered_prompt.str().c_str(), 1, 0, prompt_tokens, &num_prompt_tokens);
             user_idx = 0; // reset the user index
             user_turn = 0;
             printf("Assistant: ");
@@ -1013,7 +1023,7 @@ void chat(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
         if (token == 2) { user_turn = 1; }
 
         // forward the transformer to get logits for the next token
-        float* logits = forward(transformer, token, pos);
+        T* logits = forward(transformer, token, pos);
         next = sample(sampler, logits);
         pos++;
 
@@ -1026,9 +1036,8 @@ void chat(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
         if (next == 2) { printf("\n"); }
     }
     printf("\n");
-    free(prompt_tokens);
+//    free(prompt_tokens);
 }
-#endif
 
 
 // ----------------------------------------------------------------------------
@@ -1106,11 +1115,11 @@ int main(int argc, char *argv[]) {
     // run!
     if (strcmp(mode, "generate") == 0) {
         generate(&transformer, &tokenizer, &sampler, prompt, steps);
-//    } else if (strcmp(mode, "chat") == 0) {
-//        chat(&transformer, &tokenizer, &sampler, prompt, system_prompt, steps);
-//    } else {
-//        fprintf(stderr, "unknown mode: %s\n", mode);
-//        error_usage();
+    } else if (strcmp(mode, "chat") == 0) {
+        chat(&transformer, &tokenizer, &sampler, prompt, system_prompt, steps);
+    } else {
+        fprintf(stderr, "unknown mode: %s\n", mode);
+        error_usage();
     }
 
 //    // memory and file handles cleanup
