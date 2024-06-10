@@ -14,13 +14,22 @@ rundebug: run.c
 	$(CC) -g -o run run.c -lm
 	$(CC) -g -o runq runq.c -lm
 
-
 runcppdebug: run.cpp
 	g++ -std=c++17 -g -I. -o run run.cpp -lm
 
 runcpp: run.cpp
-#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
 	g++ -std=c++17 -O3 -I. -o run run.cpp -lm
+
+runcppfast: run.cpp
+	g++ -std=c++17 -Ofast -I. -o run run.cpp -lm
+
+runcppomp: run.cpp
+#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
+	g++ -std=c++17 -openmp -march=native -O3 -I. -o run run.cpp -lm
+
+runcppompfast: run.cpp
+#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
+	g++ -std=c++17 -openmp -march=native -Ofast -I. -o run run.cpp -lm
 
 
 # https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html
@@ -42,8 +51,12 @@ runfast: run.c
 # OMP_NUM_THREADS=4 ./run out/model.bin
 .PHONY: runomp
 runomp: run.c
-	$(CC) -Ofast -fopenmp -march=native run.c  -lm  -o run
-	$(CC) -Ofast -fopenmp -march=native runq.c  -lm  -o runq
+	$(CC) -O3 -openmp -march=native run.c  -lm  -o run
+	$(CC) -O3 -openmp -march=native runq.c  -lm  -o runq
+
+runompfast: run.c
+	$(CC) -Ofast -openmp -march=native run.c  -lm  -o run
+	$(CC) -Ofast -openmp -march=native runq.c  -lm  -o runq
 
 .PHONY: win64
 win64:
