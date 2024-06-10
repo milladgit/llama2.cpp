@@ -1,4 +1,4 @@
-/* Inference for Llama-2 Transformer model in pure C */
+/* Inference for Llama-2 Transformer model in C++ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -187,34 +187,41 @@ void free_transformer(Transformer<T>* t) {
 
 // ----------------------------------------------------------------------------
 // neural net blocks; the dynamics of the Transformer
+template <typename T>
+void rmsnorm(T* o, T* x, T* weight, int size) {
+    // Please add implementation of other types!
+    static_assert(std::is_same_v<T, float>);
 
-void rmsnorm(float* o, float* x, float* weight, int size) {
     // calculate sum of squares
-    float ss = 0.0f;
+    T ss = 0.0f;
     for (int j = 0; j < size; j++) {
         ss += x[j] * x[j];
     }
     ss /= size;
-    ss += 1e-5f;
-    ss = 1.0f / sqrtf(ss);
+    ss += T(1e-5f);
+    ss = T(1) / std::sqrt(ss);
     // normalize and scale
     for (int j = 0; j < size; j++) {
         o[j] = weight[j] * (ss * x[j]);
     }
 }
 
-void softmax(float* x, int size) {
+template <typename T>
+void softmax(T* x, int size) {
+    // Please add implementation of other types!
+    static_assert(std::is_same_v<T, float>);
+
     // find max value (for numerical stability)
-    float max_val = x[0];
+    T max_val = x[0];
     for (int i = 1; i < size; i++) {
         if (x[i] > max_val) {
             max_val = x[i];
         }
     }
     // exp and sum
-    float sum = 0.0f;
+    T sum = T(0);
     for (int i = 0; i < size; i++) {
-        x[i] = expf(x[i] - max_val);
+        x[i] = std::exp(x[i] - max_val);
         sum += x[i];
     }
     // normalize
@@ -223,13 +230,14 @@ void softmax(float* x, int size) {
     }
 }
 
-void matmul(float* xout, float* x, float* w, int n, int d) {
+template <typename T>
+void matmul(T* xout, T* x, T* w, int n, int d) {
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
     int i;
     #pragma omp parallel for private(i)
     for (i = 0; i < d; i++) {
-        float val = 0.0f;
+        T val = T(0);
         for (int j = 0; j < n; j++) {
             val += w[i * n + j] * x[j];
         }
