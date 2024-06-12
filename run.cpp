@@ -110,11 +110,8 @@ struct Transformer {
 template<typename T>
 void malloc_run_state(RunState<T>* s, Config* p) {
     int kv_dim = (p->dim * p->n_kv_heads) / p->n_heads;
-    s->allocate(p->dim,
-                p->hidden_dim,
-                p->n_layers * p->seq_len * kv_dim,
-                p->n_heads * p->seq_len,
-                p->vocab_size);
+    s->allocate(p->dim,p->hidden_dim,p->n_layers * p->seq_len * kv_dim,
+                p->n_heads * p->seq_len,p->vocab_size);
 }
 
 template<typename T>
@@ -180,12 +177,8 @@ void read_checkpoint(char* checkpoint, Config* config, TransformerWeights<T>* we
 template <typename T>
 void build_transformer(Transformer<T> *t, char* checkpoint_path) {
     // read in the Config and the Weights from the checkpoint
-    read_checkpoint(checkpoint_path,
-                    &t->config,
-                    &t->weights,
-                    &t->fd,
-                    &t->data,
-                    &t->file_size);
+    read_checkpoint(checkpoint_path,&t->config,&t->weights,&t->fd,
+                    &t->data,&t->file_size);
     // allocate the RunState buffers
     malloc_run_state(&t->state, &t->config);
 }
@@ -484,11 +477,8 @@ void safe_printf(char *piece) {
 int str_lookup(char *str, const std::vector<TokenIndex>& sorted_vocab, int vocab_size) {
     // efficiently find the perfect match for str in vocab, return its index or -1 if not found
     TokenIndex tok = { .str = str }; // acts as the key to search for
-    auto res = (TokenIndex *) bsearch(&tok,
-                                      (void*)sorted_vocab.data(),
-                                      vocab_size,
-                                      sizeof(TokenIndex),
-                                      compare_tokens);
+    auto res = (TokenIndex *) bsearch(&tok,(void*)sorted_vocab.data(),vocab_size,
+                                      sizeof(TokenIndex),compare_tokens);
     return res != nullptr ? res->id : -1;
 }
 
@@ -763,11 +753,8 @@ int sample(Sampler<T>* sampler, T* logits) {
             next = sample_mult(logits, sampler->vocab_size, coin);
         } else {
             // top-p (nucleus) sampling, clamping the least likely tokens to zero
-            next = sample_topp(logits,
-                               sampler->vocab_size,
-                               sampler->topp,
-                               sampler->probindex.data(),
-                               coin);
+            next = sample_topp(logits,sampler->vocab_size,sampler->topp,
+                               sampler->probindex.data(), coin);
         }
     }
     return next;
@@ -1020,18 +1007,10 @@ int main(int argc, char *argv[]) {
 
     // run!
     if (strcmp(mode, "generate") == 0) {
-        generate(&transformer,
-                 &tokenizer,
-                 &sampler,
-                 prompt,
-                 steps);
+        generate(&transformer,&tokenizer,&sampler, prompt, steps);
     } else if (strcmp(mode, "chat") == 0) {
-        chat(&transformer,
-             &tokenizer,
-             &sampler,
-             prompt,
-             system_prompt,
-             steps);
+        chat(&transformer,&tokenizer,&sampler,prompt,
+             system_prompt, steps);
     } else {
         fprintf(stderr, "unknown mode: %s\n", mode);
         error_usage();
