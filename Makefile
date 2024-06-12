@@ -1,6 +1,32 @@
 # choose your compiler, e.g. gcc/clang
 # example override to clang: make run CC=clang
 CC = gcc
+CPP = g++
+
+########## C++ targets
+
+.PHONY: runcppdebug
+runcppdebug: run.cpp
+	$(CPP) -std=c++17 -g -I. -o run run.cpp -lm
+
+.PHONY: runcpp
+runcpp: run.cpp
+	$(CPP) -std=c++17 -O3 -I. -o run run.cpp -lm
+
+.PHONY: runcppfast
+runcppfast: run.cpp
+	$(CPP) -std=c++17 -Ofast -I. -o run run.cpp -lm
+
+.PHONY: runcppfast
+runcppomp: run.cpp
+	$(CPP) -std=c++17 -openmp -march=native -O3 -I. -o run run.cpp -lm
+
+.PHONY: runcppompfast
+runcppompfast: run.cpp
+	$(CPP) -std=c++17 -openmp -march=native -Ofast -I. -o run run.cpp -lm
+
+########## C++ targets  --- END
+
 
 # the most basic way of building that is most likely to work on most systems
 .PHONY: run
@@ -10,27 +36,10 @@ run: run.c
 
 # useful for a debug build, can then e.g. analyze with valgrind, example:
 # $ valgrind --leak-check=full ./run out/model.bin -n 3
+.PHONY: rundebug
 rundebug: run.c
 	$(CC) -g -o run run.c -lm
 	$(CC) -g -o runq runq.c -lm
-
-runcppdebug: run.cpp
-	g++ -std=c++17 -g -I. -o run run.cpp -lm
-
-runcpp: run.cpp
-	g++ -std=c++17 -O3 -I. -o run run.cpp -lm
-
-runcppfast: run.cpp
-	g++ -std=c++17 -Ofast -I. -o run run.cpp -lm
-
-runcppomp: run.cpp
-#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
-	g++ -std=c++17 -openmp -march=native -O3 -I. -o run run.cpp -lm
-
-runcppompfast: run.cpp
-#	$(CXX) -std=c++17 -O3 -o run run.cpp -lm -I.
-	g++ -std=c++17 -openmp -march=native -Ofast -I. -o run run.cpp -lm
-
 
 # https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html
 # https://simonbyrne.github.io/notes/fastmath/
