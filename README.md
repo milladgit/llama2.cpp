@@ -1,4 +1,4 @@
-## llama2.cpp
+# llama2.cpp
 
 <p align="center">
   <img src="assets/llama_cute.jpg" width="300" height="300" alt="Cute Llama">
@@ -14,16 +14,16 @@ What makes it stand out?
 - Maintaining on-par performance to the C version!
 - It hasn't diverged that much from the original version written in C - you can follow the same path in this version! One can find the C++ counterpart of a particular piece of code in the C version.
 
-### Performance results
+## Performance results
 
-#### 16'' Macbook Pro 2019
---------
+### 16'' Macbook Pro 2019
+
+#### Spec
 - 2.3 GHz 8-Core Intel Core i9
 - 16 GB 2667 MHz DDR4
 - 14.4.1 (23E224)
 
-| For `stories15M.bin` file: |
-|------------------|
+#### The `stories15M.bin` file
 
 ```bash
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
@@ -31,19 +31,44 @@ wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
 
 | Target          | achieved tok/s                                     | 
 |------------------|-------------------------------------------------------|
-| **(C) run** | Instructions for installing the software              | 
-| **(C) runfast**        | Examples of how to use the software                   | 
-| **(C) runomp**      | Information about the software license                | 
-| **(C) runompfast** | Guidelines for contributing to the project            | 
-| **(C++) runcpp** | Instructions for installing the software              | 
-| **(C++) runcppfast**        | Examples of how to use the software                   | 
-| **(C++) runcppomp**      | Information about the software license                | 
-| **(C++) runcppompfast** | Guidelines for contributing to the project            | 
+| **(C) run** | 60.207612              | 
+| **(C) runfast**        | 182.965300                   | 
+| **(C) runomp**      | 58.923129                | 
+| **(C) runompfast** | 176.829268            | 
+| **(C++) runcpp** | 62.298604              | 
+| **(C++) runcppfast**        | 189.749182                   | 
+| **(C++) runcppomp**      | 60.924370                | 
+| **(C++) runcppompfast** | 188.108108            | 
 
 **Note:** ran the experiments as the following,
 ```bash
 make <TARGET> && ./run ./stories15M.bin -s 123
 ```
+
+
+#### The `stories110M.bin` file
+
+```bash
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
+```
+
+| Target          | achieved tok/s                                     | 
+|------------------|-------------------------------------------------------|
+| **(C) run** |   8.222843           | 
+| **(C) runfast**        |  28.178509                  | 
+| **(C) runomp**      |  8.532354               | 
+| **(C) runompfast** |  29.658011           | 
+| **(C++) runcpp** |  8.578582             | 
+| **(C++) runcppfast**        |  26.801744                  | 
+| **(C++) runcppomp**      |  7.939523               | 
+| **(C++) runcppompfast** |   31.733981          | 
+
+**Note:** ran the experiments as the following,
+```bash
+make <TARGET> && ./run ./stories110M.bin -s 123
+```
+
+
 
 -------------------
 
