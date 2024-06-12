@@ -1,10 +1,55 @@
-## llama2.c
+## llama2.cpp
 
 <p align="center">
   <img src="assets/llama_cute.jpg" width="300" height="300" alt="Cute Llama">
 </p>
 
-Have you ever wanted to inference a baby [Llama 2](https://ai.meta.com/llama/) model in pure C? No? Well, now you can!
+**Yet another C++ version!**
+
+Built on top of the amazing [llama2.c](https://github.com/karpathy/llama2.c) by the great [Andrej Karpathy](https://github.com/karpathy)!
+
+What makes it stand out?
+- "Semi" templated version!
+- Using STL containers to allocate and maintain required memory!
+- Maintaining on-par performance to the C version!
+- It hasn't diverged that much from the original version written in C - you can follow the same path in this version! One can find the C++ counterpart of a particular piece of code in the C version.
+
+### Performance results
+
+#### 16'' Macbook Pro 2019
+--------
+- 2.3 GHz 8-Core Intel Core i9
+- 16 GB 2667 MHz DDR4
+- 14.4.1 (23E224)
+
+| For `stories15M.bin` file: |
+|------------------|
+
+```bash
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
+```
+
+| Target          | achieved tok/s                                     | 
+|------------------|-------------------------------------------------------|
+| **(C) run** | Instructions for installing the software              | 
+| **(C) runfast**        | Examples of how to use the software                   | 
+| **(C) runomp**      | Information about the software license                | 
+| **(C) runompfast** | Guidelines for contributing to the project            | 
+| **(C++) runcpp** | Instructions for installing the software              | 
+| **(C++) runcppfast**        | Examples of how to use the software                   | 
+| **(C++) runcppomp**      | Information about the software license                | 
+| **(C++) runcppompfast** | Guidelines for contributing to the project            | 
+
+**Note:** ran the experiments as the following,
+```bash
+make <TARGET> && ./run ./stories15M.bin -s 123
+```
+
+-------------------
+
+# Contents from the original llambda.c repo
+
+Have you ever wanted to inference a baby [Llama 2](https://ai.meta.com/llama/) model in _**C++**_? No? Well, now you can!
 
 Train the Llama 2 LLM architecture in PyTorch then inference it with one simple 700-line C file ([run.c](run.c)). You might think that you need many billion parameter LLMs to do anything useful, but in fact very small LLMs can have surprisingly strong performance if you make the domain narrow enough (ref: [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) paper). This repo is a "fullstack" train + inference solution for Llama 2 LLM, with focus on minimalism and simplicity.
 
