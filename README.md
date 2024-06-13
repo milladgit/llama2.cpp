@@ -20,11 +20,15 @@ What makes it stand out?
 - 2.3 GHz 8-Core Intel Core i9
 - 16 GB 2667 MHz DDR4
 - Sonoma 14.4.1
+- g++ (which actually will be mapped to clang)
+  - Apple clang 15.0.0 (clang-1500.3.9.4) x86_64
 
 ### Linux Desktop
 - Intel(R) Core(TM) i7-14700K - 28 cores - CPU max MHz: 5600.0000
 - 32 GB DDR5 6400MHz
 - Ubuntu 24.04
+- g++
+  - 13.2.0
 
 
 #### `stories15M.bin`
