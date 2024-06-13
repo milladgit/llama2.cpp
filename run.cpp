@@ -19,6 +19,8 @@
 #include <iostream>
 #include <sstream>
 #include <cassert>
+#include <algorithm>
+#include <array>
 
 
 // ----------------------------------------------------------------------------
