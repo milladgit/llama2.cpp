@@ -17,81 +17,33 @@ What makes it stand out?
 ## Performance Results
 
 ### 16'' Macbook Pro 2019
-
-#### Spec
 - 2.3 GHz 8-Core Intel Core i9
 - 16 GB 2667 MHz DDR4
 - Sonoma 14.4.1
 
-#### `stories15M.bin`
-
-```bash
-wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
-```
-
-| Target          | achieved tok/s                                     | 
-|------------------|-------------------------------------------------------|
-| **(C) run** | 60.207612              | 
-| **(C) runfast**        | 182.965300                   | 
-| **(C) runomp**      | 58.923129                | 
-| **(C) runompfast** | 176.829268            | 
-| **(C++) runcpp** | 62.298604              | 
-| **(C++) runcppfast**        | 189.749182                   | 
-| **(C++) runcppomp**      | 60.924370                | 
-| **(C++) runcppompfast** | 188.108108            | 
-
-**Note:** ran the experiments as the following,
-```bash
-make <TARGET> && ./run ./stories15M.bin -s 123
-```
-
-
-#### `stories110M.bin`
-
-```bash
-wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
-```
-
-| Target          | achieved tok/s                                     | 
-|------------------|-------------------------------------------------------|
-| **(C) run** |   8.222843           | 
-| **(C) runfast**        |  28.178509                  | 
-| **(C) runomp**      |  8.532354               | 
-| **(C) runompfast** |  29.658011           | 
-| **(C++) runcpp** |  8.578582             | 
-| **(C++) runcppfast**        |  26.801744                  | 
-| **(C++) runcppomp**      |  7.939523               | 
-| **(C++) runcppompfast** |   31.733981          | 
-
-**Note:** ran the experiments as the following,
-```bash
-make <TARGET> && ./run ./stories110M.bin -s 123
-```
--------------------
-
-### Desktop
-
-#### Spec
-- Intel(R) Core(TM) i7-14700K - CPU max MHz: 5600.0000
+### Linux Desktop
+- Intel(R) Core(TM) i7-14700K - 28 cores - CPU max MHz: 5600.0000
 - 32 GB DDR5 6400MHz
 - Ubuntu 24.04
 
+
 #### `stories15M.bin`
 
 ```bash
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
 ```
 
-| Target          | achieved tok/s                                     | 
-|------------------|-------------------------------------------------------|
-| **(C) run** |   192.904656            | 
-| **(C) runfast**        |   337.209302                 | 
-| **(C) runomp**      |   192.477876              | 
-| **(C) runompfast** |    395.454545         | 
-| **(C++) runcpp** |   187.298170            | 
-| **(C++) runcppfast**        |     340.508806               | 
-| **(C++) runcppomp**      |   191.419142              | 
-| **(C++) runcppompfast** |  392.776524           | 
+| Target                   | Macbook (achieved tok/s)   | Linux (achieved tok/s)   |
+|--------------------------|----------------------------|--------------------------|
+| **(C) run**              | 60.207612                  | 192.904656               |
+| **(C) runfast**          | 182.965300                 | 337.209302               |
+| **(C) runomp**           | 58.923129                  | 192.477876               |
+| **(C) runompfast**       | 176.829268                 | 395.454545               |
+| **(C++) runcpp**         | 62.298604                  | 187.298170               |
+| **(C++) runcppfast**     | 189.749182                 | 340.508806               |
+| **(C++) runcppomp**      | 60.924370                  | 191.419142               |
+| **(C++) runcppompfast**  | 188.108108                 | 392.776524               |
+
 
 **Note:** ran the experiments as the following,
 ```bash
@@ -105,21 +57,22 @@ make <TARGET> && ./run ./stories15M.bin -s 123
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
 ```
 
-| Target          | achieved tok/s                                     | 
-|------------------|-------------------------------------------------------|
-| **(C) run** |    23.992653         | 
-| **(C) runfast**        |  45.033398                  | 
-| **(C) runomp**      |  23.847558               | 
-| **(C) runompfast** |   53.452685          | 
-| **(C++) runcpp** |    24.108894           | 
-| **(C++) runcppfast**        |  46.966292                  | 
-| **(C++) runcppomp**      |   24.003675              | 
-| **(C++) runcppompfast** |    52.991886         | 
+| Target                   | Macbook (achieved tok/s)   | Linux (achieved tok/s)   |
+|--------------------------|----------------------------|--------------------------|
+| **(C) run**              |  8.222843                  | 23.992653                |
+| **(C) runfast**          | 28.178509                  | 45.033398                |
+| **(C) runomp**           | 8.532354                   | 23.847558                |
+| **(C) runompfast**       | 29.658011                  | 53.452685                |
+| **(C++) runcpp**         | 8.578582                   | 24.108894                |
+| **(C++) runcppfast**     | 26.801744                  | 46.966292                |
+| **(C++) runcppomp**      | 7.939523                   | 24.003675                |
+| **(C++) runcppompfast**  | 31.733981                  | 52.991886                |
+
 
 **Note:** ran the experiments as the following,
 ```bash
 make <TARGET> && ./run ./stories110M.bin -s 123
-
+```
 
 -------------------
 
