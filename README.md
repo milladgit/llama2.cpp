@@ -14,16 +14,16 @@ What makes it stand out?
 - Maintaining on-par performance to the C version!
 - It hasn't diverged that much from the original version written in C - you can follow the same path in this version! One can find the C++ counterpart of a particular piece of code in the C version.
 
-## Performance results
+## Performance Results
 
 ### 16'' Macbook Pro 2019
 
 #### Spec
 - 2.3 GHz 8-Core Intel Core i9
 - 16 GB 2667 MHz DDR4
-- 14.4.1 (23E224)
+- Sonoma 14.4.1
 
-#### The `stories15M.bin` file
+#### `stories15M.bin`
 
 ```bash
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
@@ -46,7 +46,7 @@ make <TARGET> && ./run ./stories15M.bin -s 123
 ```
 
 
-#### The `stories110M.bin` file
+#### `stories110M.bin`
 
 ```bash
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
@@ -67,7 +67,58 @@ wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
 ```bash
 make <TARGET> && ./run ./stories110M.bin -s 123
 ```
+-------------------
 
+### Desktop
+
+#### Spec
+- Intel(R) Core(TM) i7-14700K - CPU max MHz: 5600.0000
+- 32 GB DDR5 6400MHz
+- Ubuntu 24.04
+
+#### `stories15M.bin`
+
+```bash
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
+```
+
+| Target          | achieved tok/s                                     | 
+|------------------|-------------------------------------------------------|
+| **(C) run** |   192.904656            | 
+| **(C) runfast**        |   337.209302                 | 
+| **(C) runomp**      |   192.477876              | 
+| **(C) runompfast** |    395.454545         | 
+| **(C++) runcpp** |   187.298170            | 
+| **(C++) runcppfast**        |     340.508806               | 
+| **(C++) runcppomp**      |   191.419142              | 
+| **(C++) runcppompfast** |  392.776524           | 
+
+**Note:** ran the experiments as the following,
+```bash
+make <TARGET> && ./run ./stories15M.bin -s 123
+```
+
+
+#### `stories110M.bin`
+
+```bash
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
+```
+
+| Target          | achieved tok/s                                     | 
+|------------------|-------------------------------------------------------|
+| **(C) run** |    23.992653         | 
+| **(C) runfast**        |  45.033398                  | 
+| **(C) runomp**      |  23.847558               | 
+| **(C) runompfast** |   53.452685          | 
+| **(C++) runcpp** |    24.108894           | 
+| **(C++) runcppfast**        |  46.966292                  | 
+| **(C++) runcppomp**      |   24.003675              | 
+| **(C++) runcppompfast** |    52.991886         | 
+
+**Note:** ran the experiments as the following,
+```bash
+make <TARGET> && ./run ./stories110M.bin -s 123
 
 
 -------------------
