@@ -203,7 +203,7 @@ void rmsnorm(T* o, T* x, T* weight, int size) {
 
     // calculate sum of squares
     T ss = T(0);
-    #pragma omp parallel for private(j) reduction(+:ss)
+    #pragma omp parallel for reduction(+:ss)
     for (int j = 0; j < size; j++) {
         ss += x[j] * x[j];
     }
@@ -211,7 +211,7 @@ void rmsnorm(T* o, T* x, T* weight, int size) {
     ss += T(1e-5f);
     ss = T(1) / std::sqrt(ss);
     // normalize and scale
-    #pragma omp parallel for private(j)
+    #pragma omp parallel for
     for (int j = 0; j < size; j++) {
         o[j] = weight[j] * (ss * x[j]);
     }
@@ -224,20 +224,20 @@ void softmax(T* x, int size) {
 
     // find max value (for numerical stability)
     T max_val = x[0];
-    #pragma omp parallel for private(i) reduction(max:max_val)
+    #pragma omp parallel for reduction(max:max_val)
     for (int i = 1; i < size; i++) {
         max_val = std::max(max_val, x[i]);
     }
     // exp and sum
     T sum = T(0);
-    #pragma omp parallel for private(i) reduction(+:sum)
+    #pragma omp parallel for reduction(+:sum)
     for (int i = 0; i < size; i++) {
         x[i] = std::exp(x[i] - max_val);
         sum += x[i];
     }
     T sum_inv = T(1) / sum;
     // normalize
-    #pragma omp parallel for private(i)
+    #pragma omp parallel for
     for (int i = 0; i < size; i++) {
         x[i] *= sum_inv;
     }

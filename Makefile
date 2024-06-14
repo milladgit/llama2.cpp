@@ -19,11 +19,11 @@ runcppfast: run.cpp
 
 .PHONY: runcppfast
 runcppomp: run.cpp
-	$(CPP) -std=c++17 -openmp -march=native -O3 -I. -o run run.cpp -lm
+	$(CPP) -std=c++17 -fopenmp -march=native -O3 -I. -o run run.cpp -lm
 
 .PHONY: runcppompfast
 runcppompfast: run.cpp
-	$(CPP) -std=c++17 -openmp -march=native -Ofast -I. -o run run.cpp -lm
+	$(CPP) -std=c++17 -fopenmp -march=native -Ofast -I. -o run run.cpp -lm
 
 ########## C++ targets  --- END
 
@@ -60,12 +60,12 @@ runfast: run.c
 # OMP_NUM_THREADS=4 ./run out/model.bin
 .PHONY: runomp
 runomp: run.c
-	$(CC) -O3 -openmp -march=native run.c  -lm  -o run
-	$(CC) -O3 -openmp -march=native runq.c  -lm  -o runq
+	$(CC) -O3 -fopenmp -march=native run.c  -lm  -o run
+	$(CC) -O3 -fopenmp -march=native runq.c  -lm  -o runq
 
 runompfast: run.c
-	$(CC) -Ofast -openmp -march=native run.c  -lm  -o run
-	$(CC) -Ofast -openmp -march=native runq.c  -lm  -o runq
+	$(CC) -Ofast -fopenmp -march=native run.c  -lm  -o run
+	$(CC) -Ofast -fopenmp -march=native runq.c  -lm  -o runq
 
 .PHONY: win64
 win64:
